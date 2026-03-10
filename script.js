@@ -1,13 +1,13 @@
 const API_KEY = "512717404df5457a8b8e78fce1b24591"
 const STOP_ID = "8274"
 
-async function loadDepartures(){
+async function loadBuses(){
+
+const url = `https://api.at.govt.nz/v2/public/realtime/stopdepartures/${STOP_ID}`
 
 try{
 
-const response = await fetch(
-`https://api.at.govt.nz/v2/public/realtime/stopdepartures/${STOP_ID}`,
-{
+const response = await fetch(url,{
 headers:{
 "Ocp-Apim-Subscription-Key":API_KEY
 }
@@ -15,14 +15,48 @@ headers:{
 
 const data = await response.json()
 
-console.log(data)
+const table = document.getElementById("buses")
+table.innerHTML=""
 
-}catch(err){
+const departures = data.response
 
-console.error("API ERROR:",err)
+if(!departures || departures.length === 0){
+table.innerHTML="<tr><td colspan='3'>No buses</td></tr>"
+return
+}
+
+departures.slice(0,6).forEach(bus=>{
+
+const route = bus.routeShortName
+const destination = bus.tripHeadsign
+
+const arrivalTime = new Date(bus.expectedDepartureTime)
+const now = new Date()
+
+let minutes = Math.round((arrivalTime-now)/60000)
+
+let display = minutes<=0 ? "Due" : minutes+" min"
+
+const row = document.createElement("tr")
+
+row.innerHTML = `
+<td class="route">${route}</td>
+<td>${destination}</td>
+<td class="time">${display}</td>
+`
+
+table.appendChild(row)
+
+})
+
+}catch(error){
+
+console.error("API error:",error)
 
 }
 
 }
 
-loadDepartures()
+loadBuses()
+
+setInterval(loadBuses,20000)
