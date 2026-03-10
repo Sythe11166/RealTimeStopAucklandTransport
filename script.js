@@ -1,5 +1,6 @@
 const API_KEY = "512717404df5457a8b8e78fce1b24591"
 const STOP_ID = "8274"
+const STOP_NAME = "Stop 8274"
 
 async function loadBuses(){
 
