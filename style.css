@@ -1,0 +1,64 @@
+body {
+font-family: Arial, Helvetica, sans-serif;
+background: #111;
+color: white;
+margin: 0;
+display: flex;
+justify-content: center;
+align-items: center;
+height: 100vh;
+}
+
+.board {
+width: 90%;
+max-width: 900px;
+background: #000;
+border-radius: 10px;
+padding: 20px;
+}
+
+header h1 {
+margin: 0;
+font-size: 32px;
+}
+
+header h2 {
+margin-top: 5px;
+color: #aaa;
+}
+
+table {
+width: 100%;
+border-collapse: collapse;
+margin-top: 20px;
+}
+
+th, td {
+padding: 12px;
+text-align: left;
+}
+
+th {
+border-bottom: 2px solid #444;
+}
+
+tr:nth-child(even) {
+background: #1a1a1a;
+}
+
+.route {
+font-weight: bold;
+font-size: 18px;
+}
+
+.time {
+font-size: 18px;
+text-align: right;
+}
+
+footer {
+margin-top: 15px;
+color: #888;
+font-size: 14px;
+text-align: right;
+}
