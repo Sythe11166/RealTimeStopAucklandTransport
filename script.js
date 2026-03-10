@@ -3,60 +3,68 @@ const STOP_ID = "8274"
 
 async function loadBuses(){
 
-const url = `https://api.at.govt.nz/v2/public/realtime/stopdepartures/${STOP_ID}`
+  const url = `https://api.at.govt.nz/v2/public/realtime/stopdepartures/${STOP_ID}`
+  const table = document.getElementById("buses")
+  const stopHeader = document.getElementById("stop")
+  
+  try{
+    
+    const response = await fetch(url, {
+      headers: {
+        "Ocp-Apim-Subscription-Key": API_KEY
+      },
+      mode: 'cors'
+    })
 
-try{
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status} ${response.statusText}`)
+    }
 
-const response = await fetch(url,{
-headers:{
-"Ocp-Apim-Subscription-Key":API_KEY
-}
-})
+    const data = await response.json()
+    
+    table.innerHTML = ""
+    stopHeader.textContent = STOP_NAME
 
-const data = await response.json()
+    const departures = data.response
 
-const table = document.getElementById("buses")
-table.innerHTML=""
+    if(!departures || departures.length === 0){
+      table.innerHTML = "<tr><td colspan='3'>No buses scheduled</td></tr>"
+      return
+    }
 
-const departures = data.response
+    departures.slice(0, 6).forEach(bus => {
 
-if(!departures || departures.length === 0){
-table.innerHTML="<tr><td colspan='3'>No buses</td></tr>"
-return
-}
+      const route = bus.routeShortName || "N/A"
+      const destination = bus.tripHeadsign || "Unknown"
 
-departures.slice(0,6).forEach(bus=>{
+      const arrivalTime = new Date(bus.expectedDepartureTime)
+      const now = new Date()
 
-const route = bus.routeShortName
-const destination = bus.tripHeadsign
+      let minutes = Math.round((arrivalTime - now) / 60000)
 
-const arrivalTime = new Date(bus.expectedDepartureTime)
-const now = new Date()
+      let display = minutes <= 0 ? "Due" : minutes + " min"
 
-let minutes = Math.round((arrivalTime-now)/60000)
+      const row = document.createElement("tr")
 
-let display = minutes<=0 ? "Due" : minutes+" min"
+      row.innerHTML = `
+        <td class="route">${route}</td>
+        <td>${destination}</td>
+        <td class="time">${display}</td>
+      `
 
-const row = document.createElement("tr")
+      table.appendChild(row)
 
-row.innerHTML = `
-<td class="route">${route}</td>
-<td>${destination}</td>
-<td class="time">${display}</td>
-`
+    })
 
-table.appendChild(row)
+  } catch(error){
 
-})
+    console.error("API error:", error)
+    table.innerHTML = `<tr><td colspan='3' style='color: #ff6b6b;'>Error: ${error.message}</td></tr>`
 
-}catch(error){
-
-console.error("API error:",error)
-
-}
+  }
 
 }
 
 loadBuses()
 
-setInterval(loadBuses,20000)
+setInterval(loadBuses, 20000)
