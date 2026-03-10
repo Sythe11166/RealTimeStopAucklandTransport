@@ -1,4 +1,4 @@
-const API_KEY = "d98a9819265043cfb60312c6506862a5"
+const API_KEY = "512717404df5457a8b8e78fce1b24591"
 const STOP_ID = "8274"
 
 async function loadDepartures() {
