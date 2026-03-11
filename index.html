@@ -90,7 +90,7 @@ function occupancyText(status){
 async function loadStop(){
 
     const response = await fetch(
-        `https://api.at.govt.nz/gtfs/v3/stops/${STOP_ID}`,
+        `https://api.at.govt.nz/realtime/legacy/departures/${STOP_ID}`,
         {
             headers:{
                 "Ocp-Apim-Subscription-Key": API_KEY
