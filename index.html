@@ -3,128 +3,119 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AT Live Tracker (Fix 404)</title>
+    <title>AT Legacy Tracker</title>
     <style>
-        body { font-family: -apple-system, system-ui, sans-serif; background: #f4f4f4; padding: 20px; display: flex; justify-content: center; }
-        .card { width: 100%; max-width: 400px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding: 20px; }
+        .card { width: 100%; max-width: 420px; background: white; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
         .header { background: #00457c; color: white; padding: 20px; text-align: center; }
         .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
-        .route { background: #222; color: white; padding: 6px 10px; border-radius: 6px; font-weight: bold; min-width: 45px; text-align: center; }
-        .info { flex: 1; margin-left: 15px; }
-        .occupancy { font-size: 0.8rem; color: #666; }
-        .time { text-align: right; }
-        .due { color: #00875a; font-weight: bold; font-size: 1.1rem; }
-        .sched { color: #777; font-size: 0.85rem; }
-        .status-box { padding: 10px; font-size: 0.8rem; background: #fff3cd; color: #856404; text-align: center; }
+        .route-badge { background: #222; color: white; width: 55px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: bold; font-size: 1.1rem; }
+        .details { flex: 1; margin-left: 15px; }
+        .occupancy { font-size: 0.8rem; color: #666; margin-top: 4px; }
+        .time-info { text-align: right; }
+        .mins { color: #00875a; font-weight: bold; font-size: 1.2rem; display: block; }
+        .clock { color: #888; font-size: 0.85rem; }
+        .empty { padding: 40px; text-align: center; color: #999; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h2 id="stop-name" style="margin:0">Bus Tracker</h2>
-        <div id="api-status" style="font-size: 0.7rem; opacity: 0.8; margin-top: 5px;">Checking connection...</div>
+        <h2 id="stop-label" style="margin:0">Loading Stop...</h2>
+        <small id="status">Connecting to Legacy Feed...</small>
     </div>
     <div id="bus-list">
-        <div style="padding:40px; text-align:center; color:#888;">Initializing...</div>
+        <div class="empty">Scanning for buses...</div>
     </div>
 </div>
 
 <script>
-    // --- CONFIGURE HERE ---
-    const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const STOP_ID = '8274-e1c68f23'; // 7019 is Britomart (Good for testing)
-    // ----------------------
+    const API_KEY = 'YOUR_AT_API_KEY';
+    const STOP_ID = '7019'; // Use 7019 (Britomart) to test if your stop is quiet
 
-    const endpoints = [
-        `https://api.at.govt.nz/v2/public/realtime/tripupdates`, // Most common for Free/Public tier
-        `https://api.at.govt.nz/realtime/legacy/tripupdates`         // Common for Auth/Partner tier
-    ];
+    async function fetchLegacyData() {
+        const listContainer = document.getElementById('bus-list');
+        const statusText = document.getElementById('status');
+        document.getElementById('stop-label').innerText = `Stop #${STOP_ID}`;
 
-    async function fetchBuses() {
-        const listDiv = document.getElementById('bus-list');
-        const statusDiv = document.getElementById('api-status');
-        let data = null;
-        let successUrl = "";
+        try {
+            const response = await fetch(`https://api.at.govt.nz/realtime/legacy/tripupdates`, {
+                headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
+            });
 
-        // Try each endpoint until one works (avoids 404)
-        for (let url of endpoints) {
-            try {
-                const response = await fetch(url, {
-                    headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
-                });
-                if (response.ok) {
-                    data = await response.json();
-                    successUrl = url;
-                    break; 
-                }
-            } catch (e) { console.log("Failed: " + url); }
-        }
+            if (!response.ok) throw new Error(`Fetch Error: ${response.status}`);
 
-        if (!data) {
-            listDiv.innerHTML = `<div style="padding:20px; color:red; text-align:center;">
-                <strong>API Error (404/401)</strong><br>
-                Please ensure you have subscribed to the "Realtime" product in the AT portal.
-            </div>`;
-            statusDiv.innerText = "Connection Failed";
-            return;
-        }
+            const data = await response.json();
+            const now = Math.floor(Date.now() / 1000);
+            let results = [];
 
-        statusDiv.innerText = "Connected via " + (successUrl.includes('public') ? 'Public Entry' : 'Standard Entry');
+            // The Legacy feed structure usually places entities under 'response.entity'
+            if (data.response && data.response.entity) {
+                data.response.entity.forEach(item => {
+                    const tripUpdate = item.trip_update;
+                    if (!tripUpdate || !tripUpdate.stop_time_update) return;
 
-        // Filter for our stop
-        const now = Math.floor(Date.now() / 1000);
-        let found = [];
+                    // Search the array of stops in this trip for our specific STOP_ID
+                    const myStop = tripUpdate.stop_time_update.find(s => String(s.stop_id) === String(STOP_ID));
 
-        data.response.entity.forEach(item => {
-            if (item.trip_update && item.trip_update.stop_time_update) {
-                const stop = item.trip_update.stop_time_update.find(s => s.stop_id === STOP_ID);
-                if (stop) {
-                    const time = stop.arrival ? stop.arrival.time : stop.departure.time;
-                    if (time > now - 60) {
-                        found.push({
-                            route: item.trip_update.trip.route_id.split('-')[0],
-                            time: time,
-                            occ: item.trip_update.vehicle ? item.trip_update.vehicle.occupancy_status : -1
-                        });
+                    if (myStop) {
+                        const timeData = myStop.arrival || myStop.departure;
+                        if (timeData && timeData.time > now - 60) {
+                            results.push({
+                                // Trims "18-2026..." down to "18"
+                                route: tripUpdate.trip.route_id.split('-')[0],
+                                timestamp: timeData.time,
+                                occupancy: tripUpdate.vehicle ? tripUpdate.vehicle.occupancy_status : -1
+                            });
+                        }
                     }
-                }
+                });
             }
-        });
 
-        render(found.sort((a,b) => a.time - b.time).slice(0, 5));
+            statusText.innerText = "Live Data Updated";
+            renderBuses(results.sort((a, b) => a.timestamp - b.timestamp).slice(0, 5));
+
+        } catch (err) {
+            statusText.innerText = "Error: " + err.message;
+            console.error(err);
+        }
     }
 
-    function render(buses) {
-        const listDiv = document.getElementById('bus-list');
+    function getOccText(val) {
+        const labels = ["Empty", "Many Seats", "Few Seats", "Standing Only", "Full", "Not Boarding"];
+        return labels[val] || "Seats Available"; // Default to common status if -1
+    }
+
+    function renderBuses(buses) {
+        const container = document.getElementById('bus-list');
         if (buses.length === 0) {
-            listDiv.innerHTML = '<div style="padding:40px; text-align:center;">No buses scheduled soon.</div>';
+            container.innerHTML = '<div class="empty">No upcoming buses found.<br><small>Try Stop 7019 to verify the connection.</small></div>';
             return;
         }
 
-        const occLabels = ["Empty", "Seats Available", "Few Seats", "Standing Only", "Full", "Not Boarding"];
-        
-        listDiv.innerHTML = buses.map(b => {
-            const mins = Math.floor((b.time - Math.floor(Date.now()/1000)) / 60);
-            const timeStr = new Date(b.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        container.innerHTML = buses.map(bus => {
+            const waitMins = Math.floor((bus.timestamp - Math.floor(Date.now()/1000)) / 60);
+            const timeStr = new Date(bus.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            
             return `
                 <div class="bus-row">
-                    <div class="route">${b.route}</div>
-                    <div class="info">
-                        <strong>Service</strong>
-                        <div class="occupancy">👥 ${occLabels[b.occ] || 'Unknown'}</div>
+                    <div class="route-badge">${bus.route}</div>
+                    <div class="details">
+                        <strong>Towards Destination</strong>
+                        <div class="occupancy">👥 ${getOccText(bus.occupancy)}</div>
                     </div>
-                    <div class="time">
-                        <div class="due">${mins <= 0 ? 'Due' : mins + 'm'}</div>
-                        <div class="sched">${timeStr}</div>
+                    <div class="time-info">
+                        <span class="mins">${waitMins <= 0 ? 'Due' : waitMins + 'm'}</span>
+                        <span class="clock">${timeStr}</span>
                     </div>
                 </div>
             `;
         }).join('');
     }
 
-    fetchBuses();
-    setInterval(fetchBuses, 30000);
+    fetchLegacyData();
+    setInterval(fetchLegacyData, 30000); // Refresh every 30s
 </script>
 
 </body>
