@@ -53,56 +53,20 @@ th,td{
 const API_KEY = "109baa24d25a4ad2a9f94f8a52166bd5";
 
 async function testVehicleLocations() {
-    const table = document.getElementById("buses");
-    const errorDiv = document.getElementById("error");
-    table.innerHTML = "";
-    errorDiv.innerText = "";
-
     try {
         const response = await fetch("https://api.at.govt.nz/realtime/legacy/vehiclelocations", {
             headers: { "Ocp-Apim-Subscription-Key": API_KEY }
         });
-
-        if (!response.ok) {
-            throw new Error("API request failed with status " + response.status);
-        }
-
         const data = await response.json();
-        console.log("Vehicle locations response:", data); // debug in console
-
-        const vehicles = Array.isArray(data.vehicleLocations) ? data.vehicleLocations : [];
-
-        if (vehicles.length === 0) {
-            table.innerHTML = `<tr><td colspan="3" style="text-align:center">No vehicles found</td></tr>`;
-            return;
-        }
-
-        // Show first 10 vehicles as a test
-        vehicles.slice(0, 10).forEach(v => {
-            const route = v.route || "-";
-            const nextStop = v.nextStopId || "-";
-            const occupancy = v.occupancy ? v.occupancy.replace(/_/g, ' ') : "Unknown";
-
-            const row = `
-                <tr>
-                    <td class="route">${route}</td>
-                    <td>${nextStop}</td>
-                    <td>${occupancy}</td>
-                </tr>
-            `;
-            table.innerHTML += row;
-        });
-
+        console.log("Raw /vehiclelocations response:", data);
+        alert("Check the console for API output"); // quick visual confirmation
     } catch (err) {
         console.error(err);
-        errorDiv.innerText = "Error: " + err.message;
-        table.innerHTML = `<tr><td colspan="3" style="text-align:center">Unable to load vehicles</td></tr>`;
+        alert("API error: " + err.message);
     }
 }
 
-// Test fetch every 30s
 testVehicleLocations();
-setInterval(testVehicleLocations, 30000);
 </script>
 
 </body>
