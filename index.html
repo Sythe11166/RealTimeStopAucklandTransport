@@ -70,24 +70,27 @@ async function testVehicleLocations() {
         const data = await response.json();
         console.log("Full response:", data);
 
-        const vehicles = Array.isArray(data.response?.entity) ? data.response.entity : [];
+        const entities = Array.isArray(data.response?.entity) ? data.response.entity : [];
 
-        if (vehicles.length === 0) {
+        if (entities.length === 0) {
             table.innerHTML = `<tr><td colspan="3" style="text-align:center">No vehicles found</td></tr>`;
             return;
         }
 
-        // Show first 10 vehicles for testing
-        vehicles.slice(0, 10).forEach(v => {
-            const route = v.trip?.routeId || v.route || "-";
-            const vehicleId = v.vehicleId || "-";
-            const nextStop = v.nextStopId || "-";
+        // Show first 10 vehicles
+        entities.slice(0, 10).forEach(e => {
+            const vehicle = e.vehicle || {};
+            const trip = vehicle.trip || {};
+            const route = trip.routeId || "-";
+            const vehicleId = vehicle.vehicle?.id || "-";
+            const stopId = vehicle.stopId || "-";
+            const occupancy = vehicle.occupancyStatus ? vehicle.occupancyStatus.replace(/_/g, ' ') : "Unknown";
 
             const row = `
                 <tr>
                     <td class="route">${route}</td>
                     <td>${vehicleId}</td>
-                    <td>${nextStop}</td>
+                    <td>${stopId} (${occupancy})</td>
                 </tr>
             `;
             table.innerHTML += row;
