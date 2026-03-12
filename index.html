@@ -2,59 +2,80 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Live Bus Stop Tracker</title>
+<title>Live Bus Stop Board</title>
 
 <style>
+
 body{
-    font-family: Arial;
-    background:#0f172a;
+    margin:0;
+    font-family: "Segoe UI", Arial;
+    background:#0b1320;
     color:white;
-    text-align:center;
 }
 
-h1{
-    margin-top:20px;
+.header{
+    background:#111827;
+    padding:20px;
+    font-size:28px;
+    font-weight:600;
 }
 
-table{
-    margin:auto;
-    margin-top:20px;
-    border-collapse:collapse;
-    width:600px;
+.container{
+    padding:20px;
 }
 
-th,td{
-    padding:12px;
-    border-bottom:1px solid #334155;
+.busCard{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+
+    background:#111827;
+    border-radius:12px;
+
+    padding:18px;
+    margin-bottom:12px;
 }
 
-th{
-    background:#1e293b;
+.route{
+    font-size:26px;
+    font-weight:bold;
+    background:#2563eb;
+    padding:10px 18px;
+    border-radius:10px;
 }
 
-tr:hover{
-    background:#1e293b;
+.timeSection{
+    text-align:right;
 }
+
+.minutes{
+    font-size:30px;
+    font-weight:bold;
+}
+
+.scheduled{
+    color:#9ca3af;
+}
+
+.occupancy{
+    font-size:14px;
+    margin-top:4px;
+}
+
+.green{color:#22c55e;}
+.orange{color:#f59e0b;}
+.red{color:#ef4444;}
+
 </style>
 </head>
 
 <body>
 
-<h1>Stop 8274 – Live Departures</h1>
+<div class="header">
+Stop 8274 – Live Departures
+</div>
 
-<table id="busTable">
-<thead>
-<tr>
-<th>Route</th>
-<th>Minutes Away</th>
-<th>Scheduled Time</th>
-<th>Seats Available</th>
-</tr>
-</thead>
-
-<tbody>
-</tbody>
-</table>
+<div class="container" id="board"></div>
 
 <script>
 
@@ -69,31 +90,48 @@ const url =
 const response = await fetch(url);
 const data = await response.json();
 
-const table = document.querySelector("#busTable tbody");
-table.innerHTML = "";
+const board = document.getElementById("board");
+board.innerHTML = "";
 
-const departures = data.response.slice(0,5);
+const buses = data.response.slice(0,5);
 
-departures.forEach(bus => {
+buses.forEach(bus => {
 
-let route = bus.route_short_name;
-let scheduled = new Date(bus.stop_time.departure_time);
+const route = bus.route_short_name;
 
-let minutes =
-Math.round((scheduled - new Date()) / 60000);
+const scheduled = new Date(bus.stop_time.departure_time);
+
+const minutes =
+Math.max(0,Math.round((scheduled - new Date())/60000));
+
+const scheduledTime =
+scheduled.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
 
 let occupancy = bus.occupancy_status || "Unknown";
+let occClass = "";
 
-let row = `
-<tr>
-<td>${route}</td>
-<td>${minutes} min</td>
-<td>${scheduled.toLocaleTimeString()}</td>
-<td>${occupancy}</td>
-</tr>
+if(occupancy.includes("many")) occClass="green";
+if(occupancy.includes("few")) occClass="orange";
+if(occupancy.includes("standing")) occClass="red";
+
+const card = document.createElement("div");
+card.className="busCard";
+
+card.innerHTML = `
+
+<div class="route">${route}</div>
+
+<div class="timeSection">
+<div class="minutes">${minutes} min</div>
+<div class="scheduled">${scheduledTime}</div>
+<div class="occupancy ${occClass}">
+${occupancy}
+</div>
+</div>
+
 `;
 
-table.innerHTML += row;
+board.appendChild(card);
 
 });
 
