@@ -1,221 +1,127 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Stop 8274 Departures</title>
+<meta charset="utf-8">
+<title>Live Bus Stop Display</title>
 
 <style>
-
 body{
-    margin:0;
-    font-family: "Segoe UI", Arial;
-    background:#0a0f1c;
+    font-family: Arial, Helvetica, sans-serif;
+    background:#111;
     color:white;
+    margin:0;
+    padding:20px;
 }
 
-/* Header */
+h1{
+    text-align:center;
+}
 
-.header{
-    background:#111827;
-    padding:22px;
-    font-size:30px;
-    font-weight:600;
+#board{
+    max-width:600px;
+    margin:auto;
+}
+
+.bus{
     display:flex;
     justify-content:space-between;
-}
-
-.clock{
-    font-size:22px;
-    color:#9ca3af;
-}
-
-/* Container */
-
-.board{
-    padding:25px;
-}
-
-/* Bus row */
-
-.busRow{
-    display:grid;
-    grid-template-columns:120px 1fr 140px 160px;
-    align-items:center;
-
-    background:#111827;
-    border-radius:14px;
-
-    padding:18px;
-    margin-bottom:14px;
-}
-
-/* Route badge */
-
-.routeBadge{
-    font-size:28px;
-    font-weight:bold;
-    text-align:center;
-
-    padding:12px;
-    border-radius:10px;
-    background:#2563eb;
-}
-
-/* Destination */
-
-.destination{
+    padding:15px;
+    margin-bottom:10px;
+    background:#222;
+    border-radius:8px;
     font-size:20px;
 }
 
-/* Countdown */
-
-.countdown{
-    font-size:32px;
+.route{
     font-weight:bold;
-    text-align:right;
+    font-size:26px;
+    color:#00d2ff;
 }
-
-/* Time */
 
 .time{
-    text-align:right;
-    color:#9ca3af;
+    font-size:24px;
 }
-
-/* Occupancy */
 
 .occupancy{
-    font-size:14px;
+    font-size:16px;
 }
-
-.green{color:#22c55e;}
-.orange{color:#f59e0b;}
-.red{color:#ef4444;}
-
 </style>
 </head>
 
 <body>
 
-<div class="header">
-<div>Stop 8274 – Live Departures</div>
-<div class="clock" id="clock"></div>
-</div>
+<h1>Live Bus Departures</h1>
 
-<div class="board" id="board"></div>
+<div id="board"></div>
 
 <script>
 
-const API_KEY = "109baa24d25a4ad2a9f94f8a52166bd5";
-const STOP_ID = "8274";
+const STOP_ID = "8526"
+const API_KEY = "109baa24d25a4ad2a9f94f8a52166bd5"
 
-async function loadBuses(){
+const occupancyText = [
+"Empty",
+"Many Seats",
+"Few Seats",
+"Standing",
+"Limited Standing",
+"Full",
+"Not Taking Passengers"
+]
 
-map.spin(true);   
-fetch(`https://api.at.govt.nz/realtime/legacy/stopdepartures/8274', {
-    method: 'GET',
-    headers: {
-        'Cache-Control': 'no-cache',
-        'Ocp-Apim-Subscription-Key': '109baa24d25a4ad2a9f94f8a52166bd5',
-    }
+async function loadBoard(){
+
+const response = await fetch(
+`https://api.at.govt.nz/realtime/legacy/tripupdates`,
+{
+headers:{
+"Ocp-Apim-Subscription-Key":API_KEY
+}
 })
-        .then(response => response.json())
-        .then(response => {
-            map.spin(false);
-            if (response.message) {
-                console.error(response);
-                $("#status").text(`Error getting routes: ${response.message}`);
-            } else {
-                for (var r of response.data) {
-                    if (r.attributes.route_type == 712) r.attributes.route_type = 3;
-                    routes[r.id] = r.attributes;
-                }
-            }
-            loop();
-        })
-        .catch(err => {
-            map.spin(false);
-            console.error(err);
-            $("#status").text("Error loading routes.");
-        });
 
-        function loop() {
-            if (hasLoaded && !document.hasFocus()) {
-                console.log("tab unfocused, skipping");
-                return;
-            }
-            hasLoaded = true;
+const data = await response.json()
 
-map.spin(true);
-const board = document.getElementById("board");
-board.innerHTML = "";
+const board = document.getElementById("board")
+board.innerHTML = ""
 
-const buses = data.response.slice(0,5);
+data.response.entity.forEach(entity=>{
 
-buses.forEach(bus => {
+if(!entity.trip_update) return
 
-const route = bus.route_short_name;
-const destination = bus.trip_headsign || "";
+entity.trip_update.stop_time_update.forEach(stop=>{
 
-const scheduled = new Date(bus.stop_time.departure_time);
+if(stop.stop_id !== STOP_ID) return
 
-const minutes =
-Math.max(0,Math.round((scheduled - new Date())/60000));
+const route = entity.trip_update.trip.route_id
 
-const scheduledTime =
-scheduled.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+const arrival = stop.arrival?.time
+if(!arrival) return
 
-let occupancy = bus.occupancy_status || "Unknown";
-let occClass="";
+const mins = Math.round((arrival*1000 - Date.now())/60000)
 
-if(occupancy.includes("many")) occClass="green";
-if(occupancy.includes("few")) occClass="orange";
-if(occupancy.includes("standing")) occClass="red";
+if(mins < 0) return
 
-const row = document.createElement("div");
-row.className="busRow";
+const occ = occupancyText[entity.vehicle?.occupancy_status] || "Unknown"
 
-row.innerHTML = `
+const div = document.createElement("div")
+div.className="bus"
 
-<div class="routeBadge">${route}</div>
+div.innerHTML = `
+<div class="route">${route}</div>
+<div class="time">${mins} min</div>
+<div class="occupancy">${occ}</div>
+`
 
-<div class="destination">
-${destination}
-<div class="occupancy ${occClass}">
-${occupancy}
-</div>
-</div>
+board.appendChild(div)
 
-<div class="countdown">
-${minutes} min
-</div>
+})
 
-<div class="time">
-${scheduledTime}
-</div>
-
-`;
-
-board.appendChild(row);
-
-});
+})
 
 }
 
-/* Clock */
-
-function updateClock(){
-const now = new Date();
-document.getElementById("clock").innerText =
-now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-}
-
-setInterval(updateClock,1000);
-
-/* Refresh buses */
-
-loadBuses();
-setInterval(loadBuses,20000);
+loadBoard()
+setInterval(loadBoard,10000)
 
 </script>
 
