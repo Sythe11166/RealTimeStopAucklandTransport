@@ -111,12 +111,42 @@ const STOP_ID = "8274";
 
 async function loadBuses(){
 
-const url =
-`https://api.at.govt.nz/realtime/legacy/stopdepartures/${STOP_ID}?subscription-key=${API_KEY}`;
+map.spin(true);   
+fetch(`https://api.at.govt.nz/realtime/legacy/stopdepartures/8274', {
+    method: 'GET',
+    headers: {
+        'Cache-Control': 'no-cache',
+        'Ocp-Apim-Subscription-Key': '109baa24d25a4ad2a9f94f8a52166bd5',
+    }
+})
+        .then(response => response.json())
+        .then(response => {
+            map.spin(false);
+            if (response.message) {
+                console.error(response);
+                $("#status").text(`Error getting routes: ${response.message}`);
+            } else {
+                for (var r of response.data) {
+                    if (r.attributes.route_type == 712) r.attributes.route_type = 3;
+                    routes[r.id] = r.attributes;
+                }
+            }
+            loop();
+        })
+        .catch(err => {
+            map.spin(false);
+            console.error(err);
+            $("#status").text("Error loading routes.");
+        });
 
-const response = await fetch(url);
-const data = await response.json();
+        function loop() {
+            if (hasLoaded && !document.hasFocus()) {
+                console.log("tab unfocused, skipping");
+                return;
+            }
+            hasLoaded = true;
 
+map.spin(true);
 const board = document.getElementById("board");
 board.innerHTML = "";
 
