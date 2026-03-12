@@ -3,123 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AT Live Stop Tracker</title>
+    <title>AT Live Tracker</title>
     <style>
-        :root { --at-blue: #00457c; --at-green: #00875a; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f7f6; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 400px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: var(--at-blue); color: white; padding: 20px; text-align: center; }
-        .header h1 { margin: 0; font-size: 1.4rem; }
-        .bus-item { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
-        .route-box { background: #222; color: white; width: 50px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: bold; font-size: 1.1rem; }
-        .details { flex: 1; margin-left: 15px; }
-        .occupancy { font-size: 0.8rem; color: #666; margin-top: 3px; }
-        .timing { text-align: right; }
-        .mins-away { color: var(--at-green); font-weight: bold; font-size: 1.2rem; display: block; }
-        .sched-time { color: #888; font-size: 0.85rem; }
-        .error { color: #d63031; padding: 20px; text-align: center; font-size: 0.9rem; }
-        .loading { padding: 40px; text-align: center; color: #999; }
+        body { font-family: sans-serif; background: #f0f0f0; display: flex; justify-content: center; padding: 20px; }
+        .card { width: 100%; max-width: 400px; background: white; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        .header { background: #00457c; color: white; padding: 15px; border-radius: 10px 10px 0 0; text-align: center; }
+        .bus { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
+        .route { background: #222; color: white; padding: 5px 10px; border-radius: 4px; font-weight: bold; width: 40px; text-align: center; }
+        .live { color: #27ae60; font-weight: bold; }
+        .sched { color: #7f8c8d; font-size: 0.9em; }
+        .occupancy { font-size: 0.75em; color: #666; }
+        .error { color: #c0392b; padding: 20px; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h1 id="stop-title">Stop Loading...</h1>
-        <small id="stop-sub">Real-time Arrivals</small>
+        <div id="stop-num">Stop Tracker</div>
     </div>
-    <div id="display-area">
-        <div class="loading">Connecting to AT Servers...</div>
+    <div id="results">
+        <div style="padding:20px; text-align:center;">Loading live data...</div>
     </div>
 </div>
 
 <script>
-    // --- SETTINGS ---
-    const API_KEY = '6cb37daf7f5c4feda39bbf640e892074'; 
-    const STOP_ID = '8274-e1c68f23'; // e.g., 7019 for Britomart, 1316 for Newmarket
-    // ----------------
+    const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
+    const STOP_ID = '7019'; // Use Britomart (7019) or your stop to test
 
-    async function getATData() {
-        const display = document.getElementById('display-area');
-        const title = document.getElementById('stop-title');
-        title.innerText = `Stop #${STOP_ID}`;
+    async function fetchTracker() {
+        const container = document.getElementById('results');
+        document.getElementById('stop-num').innerText = `Stop #${STOP_ID}`;
 
         try {
-            // Updated Endpoint: v2/public/realtime/stopupdates
-            const url = `https://api.at.govt.nz/v2/public/realtime/stopupdates?stop_id=${STOP_ID}`;
-            
-            const response = await fetch(url, {
+            // We use tripupdates and filter by stop_id. 
+            // Note: Use 'https://api.at.govt.nz/v2/public/realtime/tripupdates'
+            const response = await fetch(`https://api.at.govt.nz/v2/public/realtime/tripupdates`, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
 
-            if (response.status === 404) throw new Error("404: Stop Not Found. Check your API Key permissions.");
-            if (!response.ok) throw new Error(`Status: ${response.status}`);
+            if (!response.ok) throw new Error(`Server returned ${response.status}`);
 
             const data = await response.json();
+            const now = Math.floor(Date.now() / 1000);
             
-            if (!data.response || !data.response.entity || data.response.entity.length === 0) {
-                display.innerHTML = '<div class="loading">No active buses found for this stop.</div>';
+            // 1. Filter entities that have a stop_time_update matching our STOP_ID
+            let foundBuses = [];
+
+            data.response.entity.forEach(entity => {
+                if (entity.trip_update && entity.trip_update.stop_time_update) {
+                    // AT often returns an array of stop updates for a single trip
+                    const stopUpdate = entity.trip_update.stop_time_update.find(s => s.stop_id === STOP_ID);
+                    
+                    if (stopUpdate) {
+                        const arrival = stopUpdate.arrival || stopUpdate.departure;
+                        if (arrival && arrival.time > now - 60) {
+                            foundBuses.push({
+                                route: entity.trip_update.trip.route_id.split('-')[0],
+                                time: arrival.time,
+                                occupancy: entity.trip_update.vehicle ? entity.trip_update.vehicle.occupancy_status : 'N/A'
+                            });
+                        }
+                    }
+                }
+            });
+
+            // 2. Sort by time and take top 5
+            foundBuses.sort((a, b) => a.time - b.time);
+            const top5 = foundBuses.slice(0, 5);
+
+            if (top5.length === 0) {
+                container.innerHTML = '<div class="error">No upcoming buses found for this specific stop ID.</div>';
                 return;
             }
 
-            // Process and Sort
-            const now = Math.floor(Date.now() / 1000);
-            let arrivals = data.response.entity.map(item => {
-                const trip = item.trip_update;
-                const stopTime = trip.stop_time_update;
-                const timeValue = stopTime.arrival ? stopTime.arrival.time : stopTime.departure.time;
+            // 3. Render
+            container.innerHTML = '';
+            top5.forEach(bus => {
+                const minsAway = Math.floor((bus.time - now) / 60);
+                const timeStr = new Date(bus.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 
-                return {
-                    // Extract just the route number (e.g., "NX1" from "NX1-202...")
-                    route: trip.trip.route_id.split('-')[0], 
-                    seconds: timeValue - now,
-                    timeStr: new Date(timeValue * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-                    occupancy: trip.vehicle ? trip.vehicle.occupancy_status : -1
-                };
-            })
-            .filter(a => a.seconds > -60) // Keep buses arriving now or soon
-            .sort((a, b) => a.seconds - b.seconds)
-            .slice(0, 5);
+                container.innerHTML += `
+                    <div class="bus">
+                        <div>
+                            <div class="route">${bus.route}</div>
+                            <div class="occupancy">Occupancy: ${getOcc(bus.occupancy)}</div>
+                        </div>
+                        <div style="text-align:right">
+                            <div class="${minsAway < 20 ? 'live' : 'sched'}">${minsAway <= 0 ? 'Due' : minsAway + ' mins'}</div>
+                            <div class="sched">${timeStr}</div>
+                        </div>
+                    </div>
+                `;
+            });
 
-            render(arrivals);
         } catch (err) {
-            display.innerHTML = `<div class="error"><strong>Error:</strong><br>${err.message}</div>`;
+            container.innerHTML = `<div class="error">Error: ${err.message}<br>Check if your API key is active.</div>`;
         }
     }
 
-    function getOccText(val) {
-        const labels = ["Empty", "Many Seats", "Few Seats", "Standing Only", "Full", "Not Boarding"];
-        return labels[val] || "No occupancy data";
+    function getOcc(level) {
+        const map = ["Empty", "Many Seats", "Few Seats", "Standing Only", "Full", "Not Boarding"];
+        return map[level] || "Unknown";
     }
 
-    function render(buses) {
-        const display = document.getElementById('display-area');
-        display.innerHTML = '';
-
-        buses.forEach(bus => {
-            const mins = Math.floor(bus.seconds / 60);
-            const isLive = mins <= 30;
-
-            const html = `
-                <div class="bus-item">
-                    <div class="route-box">${bus.route}</div>
-                    <div class="details">
-                        <strong>Live Service</strong>
-                        <div class="occupancy">👥 ${getOccText(bus.occupancy)}</div>
-                    </div>
-                    <div class="timing">
-                        <span class="mins-away">${isLive && mins > 0 ? mins + 'm' : (mins <= 0 ? 'Due' : '')}</span>
-                        <span class="sched-time">${bus.timeStr}</span>
-                    </div>
-                </div>
-            `;
-            display.innerHTML += html;
-        });
-    }
-
-    // Run & Set Interval
-    getATData();
-    setInterval(getATData, 30000);
+    fetchTracker();
+    setInterval(fetchTracker, 30000);
 </script>
 
 </body>
