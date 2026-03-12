@@ -3,45 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>24B & 24R Tracker</title>
+    <title>Stop 8274: 24B & 24R</title>
     <style>
         :root { --at-blue: #00457c; --at-green: #00875a; }
         body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding: 20px; }
         .card { width: 100%; max-width: 450px; background: white; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: var(--at-blue); color: white; padding: 20px; }
-        .search-row { display: flex; gap: 8px; margin-top: 10px; }
-        .search-row input { flex: 1; padding: 8px; border-radius: 5px; border: none; }
+        .header { background: var(--at-blue); color: white; padding: 25px; text-align: center; }
         .bus-row { display: flex; align-items: center; padding: 18px; border-bottom: 1px solid #eee; }
-        .route-badge { background: var(--at-blue); color: white; width: 60px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-weight: bold; font-size: 1.1rem; }
+        .route-badge { background: var(--at-blue); color: white; width: 65px; height: 45px; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: 800; font-size: 1.2rem; }
         .details { flex: 1; margin-left: 15px; }
         .time-info { text-align: right; }
-        .mins { color: var(--at-green); font-weight: 800; font-size: 1.3rem; }
-        .clock { color: #888; font-size: 0.8rem; display: block; }
-        .empty { padding: 40px; text-align: center; color: #999; }
+        .mins { color: var(--at-green); font-weight: 800; font-size: 1.4rem; }
+        .pulse { animation: pulse-green 2s infinite; }
+        @keyframes pulse-green { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        .empty { padding: 50px; text-align: center; color: #999; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <div style="font-weight: bold;">24B / 24R Live Tracker</div>
-        <div class="search-row">
-            <input type="text" id="stopInput" placeholder="Enter Stop ID (e.g. 7019)">
-            <button onclick="update()">Update</button>
-        </div>
+        <h2 style="margin:0">Stop 8274</h2>
+        <small id="status">Scanning for 24B & 24R...</small>
     </div>
-    <div id="bus-list"><div class="empty">Enter a stop to scan for 24B/24R...</div></div>
+    <div id="bus-list"><div class="empty">Searching Auckland network...</div></div>
 </div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    let myStop = '8274';
+    const MY_STOP = '8274';
 
-    async function update() {
-        const input = document.getElementById('stopInput').value;
-        if(input) myStop = input.trim();
-        
+    async function scanNetwork() {
         const list = document.getElementById('bus-list');
+        const status = document.getElementById('status');
+        
         try {
             const res = await fetch(`https://api.at.govt.nz/realtime/legacy/tripupdates`, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
@@ -53,38 +48,41 @@
             if (data.response && data.response.entity) {
                 data.response.entity.forEach(item => {
                     const tu = item.trip_update;
-                    if (!tu) return;
+                    if (!tu || !tu.trip) return;
 
-                    // 1. FILTER FOR 24B OR 24R ONLY
+                    // Match Route 24B or 24R
                     const rId = tu.trip.route_id.toUpperCase();
-                    if (!rId.includes('24B') && !rId.includes('24R')) return;
+                    if (rId.includes('24B') || rId.includes('24R')) {
+                        
+                        // Scan ALL stop updates for this bus
+                        const updates = [].concat(tu.stop_time_update || []);
+                        const match = updates.find(s => String(s.stop_id).trim() === MY_STOP);
 
-                    // 2. CHECK IF THIS BUS IS COMING TO OUR STOP
-                    const updates = [].concat(tu.stop_time_update || []);
-                    const match = updates.find(s => String(s.stop_id) === String(myStop));
-
-                    if (match) {
-                        const t = (match.arrival || match.departure).time;
-                        if (t > now - 60) {
-                            found.push({
-                                route: rId.split('-')[0], // Cleans "24B-202..." to "24B"
-                                ts: t
-                            });
+                        if (match) {
+                            const timeObj = match.arrival || match.departure;
+                            if (timeObj && timeObj.time > now - 60) {
+                                found.push({
+                                    route: rId.split('-')[0],
+                                    ts: parseInt(timeObj.time)
+                                });
+                            }
                         }
                     }
                 });
             }
 
-            render(found.sort((a,b) => a.ts - b.ts));
+            status.innerText = `Last Updated: ${new Date().toLocaleTimeString()}`;
+            render(found.sort((a,b) => a.ts - b.ts).slice(0, 5));
+
         } catch (e) {
-            list.innerHTML = `<div class="empty">Connection error. Check API Key.</div>`;
+            status.innerText = "Connection Error";
         }
     }
 
     function render(buses) {
         const list = document.getElementById('bus-list');
         if (buses.length === 0) {
-            list.innerHTML = '<div class="empty">No 24B or 24R buses currently tracked for this stop.</div>';
+            list.innerHTML = '<div class="empty">No 24B/24R buses currently<br>reported on approach to 8274.</div>';
             return;
         }
 
@@ -94,18 +92,18 @@
             return `
                 <div class="bus-row">
                     <div class="route-badge">${b.route}</div>
-                    <div class="details"><strong>Approaching Stop</strong><br><small>Live Tracking Active</small></div>
+                    <div class="details"><strong>Live Approach</strong><br><small>Sandringham Rd</small></div>
                     <div class="time-info">
-                        <span class="mins">${m <= 0 ? 'DUE' : m + 'm'}</span>
-                        <span class="clock">${time}</span>
+                        <span class="mins ${m < 3 ? 'pulse' : ''}">${m <= 0 ? 'DUE' : m + 'm'}</span>
+                        <span style="display:block; font-size:0.8rem; color:#888;">${time}</span>
                     </div>
                 </div>
             `;
         }).join('');
     }
 
-    setInterval(update, 20000);
-    update();
+    setInterval(scanNetwork, 20000);
+    scanNetwork();
 </script>
 </body>
 </html>
