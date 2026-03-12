@@ -35,7 +35,7 @@
         try {
             // 1. Fetch Stop Information (Static)
             // 2. Fetch Real-time Trip Updates
-            const response = await fetch(`https://api.at.govt.nz/v2/public/realtime/stopupdates?stop_id=${STOP_ID}`, {
+            const response = await fetch(`https://api.at.govt.nz/v3/public/realtime/stopupdates?stop_id=${STOP_ID}`, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
             const data = await response.json();
