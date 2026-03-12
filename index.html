@@ -3,41 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AT Legacy Deep Search</title>
+    <title>Auckland Transport Live Tracker</title>
     <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: white; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 400px; background: #2c3e50; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
-        .header { background: #00457c; padding: 20px; text-align: center; border-bottom: 3px solid #f1c40f; }
-        .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #34495e; background: #2c3e50; }
-        .route-badge { background: #f1c40f; color: #000; width: 50px; height: 35px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-weight: 900; }
-        .details { flex: 1; margin-left: 15px; }
-        .occupancy { font-size: 0.75rem; color: #bdc3c7; }
-        .time-info { text-align: right; }
-        .mins { color: #2ecc71; font-weight: bold; font-size: 1.2rem; }
-        .clock { color: #95a5a6; font-size: 0.8rem; display: block; }
-        .debug-info { font-size: 0.65rem; color: #7f8c8d; padding: 10px; text-align: center; background: #1c2833; }
+        :root {
+            --at-blue: #00457c;
+            --at-light-blue: #eef6fc;
+            --at-green: #00875a;
+            --occupancy-color: #f39c12; /* Vibrant Orange/Gold */
+        }
+
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background: #f8f9fa; 
+            display: flex; 
+            justify-content: center; 
+            padding: 20px; 
+        }
+
+        /* Larger Box */
+        .card { 
+            width: 100%; 
+            max-width: 550px; 
+            background: white; 
+            border-radius: 16px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
+            overflow: hidden; 
+            border: 1px solid #ddd;
+        }
+
+        .header { 
+            background: white; 
+            color: var(--at-blue); 
+            padding: 25px; 
+            text-align: left; 
+            border-bottom: 2px solid var(--at-blue);
+        }
+
+        .header h2 { margin: 0; font-size: 1.6rem; letter-spacing: -0.5px; }
+
+        .bus-row { 
+            display: flex; 
+            align-items: center; 
+            padding: 20px; 
+            border-bottom: 1px solid #f0f0f0; 
+            transition: background 0.2s;
+        }
+
+        .bus-row:hover { background: var(--at-light-blue); }
+
+        /* Blue Route Numbers */
+        .route-badge { 
+            background: var(--at-blue); 
+            color: white; 
+            width: 65px; 
+            height: 45px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            border-radius: 8px; 
+            font-weight: 700; 
+            font-size: 1.2rem; 
+            flex-shrink: 0; 
+        }
+
+        .details { flex: 1; margin-left: 20px; }
+        
+        .service-label { 
+            font-weight: 600; 
+            color: #333; 
+            font-size: 1.05rem; 
+        }
+
+        /* Different Colour Occupancy */
+        .occupancy { 
+            font-size: 0.9rem; 
+            color: var(--occupancy-color); 
+            margin-top: 5px; 
+            font-weight: 500;
+        }
+
+        .time-info { text-align: right; margin-left: 15px; }
+
+        .mins { 
+            color: var(--at-green); 
+            font-weight: 800; 
+            font-size: 1.4rem; 
+            display: block; 
+        }
+
+        .clock { 
+            color: #7f8c8d; 
+            font-size: 0.9rem; 
+            font-weight: 400;
+        }
+
+        .debug-bar { 
+            background: #f1f1f1; 
+            color: #999; 
+            font-size: 0.7rem; 
+            padding: 8px 20px; 
+            text-align: right; 
+            text-transform: uppercase;
+        }
+
+        .empty { padding: 60px; text-align: center; color: #999; font-style: italic; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h2 id="stop-title" style="margin:0">Searching...</h2>
-        <small id="status">Initializing Feed</small>
+        <h2 id="stop-title">Stop Tracker</h2>
+        <span id="update-time" style="font-size: 0.8rem; color: #666;">Waiting for data...</span>
     </div>
+    
     <div id="bus-list">
-        <div style="padding:40px; text-align:center;">Scanning Auckland Network...</div>
+        <div class="empty">Initialising live feed...</div>
     </div>
-    <div id="debug" class="debug-info">Trips Scanned: 0</div>
+
+    <div id="debug" class="debug-bar">Trips Scanned: 0</div>
 </div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const STOP_ID = '8274'; // Use 7019 for Britomart to verify code works
+    const STOP_ID = '8274'; // Use 7019 for Britomart, or your specific stop
 
-    async function deepSearchBuses() {
+    async function updateTracker() {
         const listContainer = document.getElementById('bus-list');
-        const status = document.getElementById('status');
+        const updateTime = document.getElementById('update-time');
         const debug = document.getElementById('debug');
         
         try {
@@ -45,29 +138,25 @@
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
 
+            if (!response.ok) throw new Error("Connection failed");
+
             const data = await response.json();
             const now = Math.floor(Date.now() / 1000);
             let found = [];
-            let scanCount = 0;
 
             if (data.response && data.response.entity) {
-                scanCount = data.response.entity.length;
+                debug.innerText = `Trips Scanned: ${data.response.entity.length}`;
                 
                 data.response.entity.forEach(item => {
                     const tu = item.trip_update;
                     if (!tu || !tu.stop_time_update) return;
 
                     const updates = [].concat(tu.stop_time_update);
-                    
-                    // Deep check: match stop_id as string, number, or padded string
-                    const myStop = updates.find(s => 
-                        String(s.stop_id).trim() === String(STOP_ID).trim() ||
-                        String(s.stop_id).includes(STOP_ID)
-                    );
+                    const myStop = updates.find(s => String(s.stop_id).trim() === String(STOP_ID).trim());
 
                     if (myStop) {
                         const t = myStop.arrival || myStop.departure;
-                        if (t && t.time > now - 300) {
+                        if (t && t.time > now - 120) {
                             found.push({
                                 route: tu.trip.route_id.split('-')[0],
                                 ts: parseInt(t.time),
@@ -78,39 +167,52 @@
                 });
             }
 
-            debug.innerText = `Trips Scanned: ${scanCount} | Found: ${found.length}`;
-            status.innerText = "Live Update Successful";
-            document.getElementById('stop-title').innerText = `Stop #${STOP_ID}`;
+            document.getElementById('stop-title').innerText = `Stop ${STOP_ID}`;
+            updateTime.innerText = `Last updated: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
             
-            render(found.sort((a,b) => a.ts - b.ts).slice(0, 5));
+            // NEXT 6 SERVICES SLICE
+            render(found.sort((a,b) => a.ts - b.ts).slice(0, 6));
 
         } catch (err) {
-            status.innerText = "Connection Error";
-            console.error(err);
+            updateTime.innerText = "Offline - Check Connection";
         }
+    }
+
+    function getOccLabel(val) {
+        const icons = ["󰄰", "󰄱", "󰄲", "󰄳", "󰄴", "󰄵"]; // Fallback icons
+        const labels = [
+            "Empty", 
+            "Many seats available", 
+            "Seats available", 
+            "Standing room only", 
+            "Limited space", 
+            "Full"
+        ];
+        return labels[val] || "Seats available";
     }
 
     function render(buses) {
         const list = document.getElementById('bus-list');
         if (buses.length === 0) {
-            list.innerHTML = '<div style="padding:40px; text-align:center;">No buses found in feed.<br><small>This happens if buses are > 30 mins away.</small></div>';
+            list.innerHTML = '<div class="empty">No upcoming services found for this stop.</div>';
             return;
         }
 
-        const labels = ["Empty", "Seats Avail", "Few Seats", "Standing", "Full", "Closed"];
-        
         list.innerHTML = buses.map(b => {
             const mins = Math.floor((b.ts - Math.floor(Date.now()/1000)) / 60);
             const time = new Date(b.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            
             return `
                 <div class="bus-row">
                     <div class="route-badge">${b.route}</div>
                     <div class="details">
-                        <div style="font-weight:bold">Active Service</div>
-                        <div class="occupancy">👥 ${labels[b.occ] || 'Available'}</div>
+                        <div class="service-label">Live Service</div>
+                        <div class="occupancy">
+                            <span style="font-size:1.1rem">👤</span> ${getOccLabel(b.occ)}
+                        </div>
                     </div>
                     <div class="time-info">
-                        <div class="mins">${mins <= 0 ? 'DUE' : mins + 'm'}</div>
+                        <div class="mins">${mins <= 0 ? 'DUE' : mins + '<span style="font-size:0.8rem">min</span>'}</div>
                         <div class="clock">${time}</div>
                     </div>
                 </div>
@@ -118,8 +220,8 @@
         }).join('');
     }
 
-    deepSearchBuses();
-    setInterval(deepSearchBuses, 30000);
+    updateTracker();
+    setInterval(updateTracker, 30000);
 </script>
 
 </body>
