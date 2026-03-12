@@ -2,120 +2,84 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>AT Bus Stop</title>
-
+<title>Live Bus Stop</title>
 <style>
 body{
-    font-family:Arial;
+    font-family: Arial;
     background:#111;
     color:white;
+    text-align:center;
 }
-
+h1{
+    margin-top:20px;
+}
 table{
-    width:80%;
     margin:auto;
     border-collapse:collapse;
+    width:80%;
 }
-
 th,td{
-    padding:10px;
     border-bottom:1px solid #444;
+    padding:12px;
 }
-
+th{
+    background:#222;
+}
 .route{
     font-size:22px;
     font-weight:bold;
 }
-
+.realtime{ color:#4caf50; }
+.scheduled{ color:#ff9800; }
+.error{ color:red; }
 </style>
 </head>
-
 <body>
-
-<h2 style="text-align:center">Bus Stop 8274</h2>
-
-<div id="error" style="color:red;text-align:center"></div>
-
+<h1>Bus Stop 8274</h1>
+<div id="error" class="error"></div>
 <table>
 <thead>
 <tr>
 <th>Route</th>
+<th>Destination</th>
 <th>Arrival</th>
-<th>Status</th>
+<th>Scheduled</th>
+<th>Occupancy</th>
 </tr>
 </thead>
-
-<tbody id="buses"></tbody>
-
+<tbody id="busTable"></tbody>
 </table>
 
 <script>
-
-const API_KEY = "109baa24d25a4ad2a9f94f8a52166bd5";
-const STOP_ID = "8274";
-
 async function loadBuses(){
-
+    const table = document.getElementById("busTable");
+    const errorBox = document.getElementById("error");
+    errorBox.innerText = "";
     try{
-
-        const response = await fetch(
-            "https://api.at.govt.nz/realtime/gtfs/v3/trip-updates",
-            {
-                headers:{
-                    "Ocp-Apim-Subscription-Key": API_KEY
-                }
-            }
-        );
-
-        const data = await response.json();
-
-        const table = document.getElementById("buses");
+        const res = await fetch("/api/buses");
+        const data = await res.json();
+        if(data.error) throw new Error(data.error);
         table.innerHTML = "";
-
-        const now = Math.floor(Date.now()/1000);
-
-        data.entity.forEach(entity => {
-
-            if(!entity.trip_update) return;
-
-            entity.trip_update.stop_time_update.forEach(stop => {
-
-                if(stop.stop_id != STOP_ID) return;
-
-                const arrival = stop.arrival?.time;
-
-                if(!arrival) return;
-
-                const minutes = Math.round((arrival - now)/60);
-
-                const row = `
+        data.arrivals.sort((a,b)=>a.arrival.replace(" min","") - b.arrival.replace(" min",""))
+                     .forEach(bus=>{
+            const row = `
                 <tr>
-                    <td class="route">${entity.trip_update.trip.route_id}</td>
-                    <td>${minutes} min</td>
-                    <td>Live</td>
-                </tr>
-                `;
-
-                table.innerHTML += row;
-
-            });
-
+                    <td class="route">${bus.route}</td>
+                    <td>${bus.destination}</td>
+                    <td class="realtime">${bus.arrival}</td>
+                    <td class="scheduled">${bus.scheduledTime}</td>
+                    <td>${bus.occupancy}</td>
+                </tr>`;
+            table.innerHTML += row;
         });
-
+    }catch(err){
+        console.error(err);
+        errorBox.innerText = "Error loading buses: "+err.message;
     }
-    catch(err){
-
-        document.getElementById("error").innerText =
-            "Error: " + err.message;
-
-    }
-
 }
 
 loadBuses();
 setInterval(loadBuses,30000);
-
 </script>
-
 </body>
 </html>
