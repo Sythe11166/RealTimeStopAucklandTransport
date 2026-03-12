@@ -3,106 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>8274 Live GPS</title>
+    <title>Stop 8274: 24-Series Tracker</title>
     <style>
-        :root { --at-blue: #00457c; --at-green: #00875a; --at-gold: #f39c12; }
-        body { font-family: 'Segoe UI', sans-serif; background: #eef2f3; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 480px; background: white; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.15); overflow: hidden; }
-        .header { background: var(--at-blue); color: white; padding: 20px; text-align: center; }
-        .bus-row { padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; align-items: center; }
-        .route-badge { background: var(--at-blue); color: white; width: 55px; height: 40px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.1rem; flex-shrink: 0; }
-        .info { flex: 1; margin-left: 15px; }
-        .status-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; margin-top: 4px; }
-        .moving { background: #e8f5e9; color: var(--at-green); }
-        .stopped { background: #fff3e0; color: var(--at-gold); }
-        .dist { font-weight: 800; color: #333; font-size: 1rem; text-align: right; }
-        .footer { background: #333; color: #aaa; padding: 10px; font-size: 0.7rem; text-align: center; letter-spacing: 1px; }
+        :root { --at-blue: #00457c; --at-green: #00875a; }
+        body { font-family: 'Segoe UI', sans-serif; background: #eaeff2; display: flex; justify-content: center; padding: 20px; }
+        .card { width: 100%; max-width: 450px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: var(--at-blue); color: white; padding: 25px; text-align: center; }
+        .bus-row { display: flex; align-items: center; padding: 18px; border-bottom: 1px solid #eee; }
+        .route-badge { background: var(--at-blue); color: white; width: 60px; height: 40px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.1rem; }
+        .details { flex: 1; margin-left: 15px; }
+        .time-info { text-align: right; }
+        .mins { color: var(--at-green); font-weight: 800; font-size: 1.4rem; display: block; }
+        .footer { background: #333; color: #0f0; padding: 10px; font-family: monospace; font-size: 0.7rem; text-align: center; }
+        .empty { padding: 50px; text-align: center; color: #999; font-style: italic; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h3 style="margin:0">GPS Direct: Stop 8274</h3>
-        <small id="update-time">Connecting to Fleet GPS...</small>
+        <h2 style="margin:0">Stop 8274</h2>
+        <div id="status" style="font-size:0.8rem; opacity:0.8;">Scanning Auckland Fleet...</div>
     </div>
-    <div id="bus-list"><div style="padding:40px; text-align:center; color:#999;">Scanning all 24B/24R vehicles...</div></div>
-    <div class="footer" id="fleet-stats">FLEET SYNC: 0 VEHICLES</div>
+    <div id="bus-list"><div class="empty">Starting scan...</div></div>
+    <div class="footer" id="console">Initializing...</div>
 </div>
 
 <script>
-    const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const MY_STOP_ID = '8274';
+    const API_KEY = 'YOUR_AT_API_KEY';
+    const MY_STOP = '8274';
 
-    async function fetchGPS() {
+    async function deepScan() {
         const list = document.getElementById('bus-list');
-        const stats = document.getElementById('fleet-stats');
-        const timeDisp = document.getElementById('update-time');
-
+        const consoleLog = document.getElementById('console');
+        const status = document.getElementById('status');
+        
         try {
-            // Using the Vehicle Positions endpoint
-            const res = await fetch(`https://api.at.govt.nz/realtime/legacy/vehiclepositions`, {
+            const res = await fetch(`https://api.at.govt.nz/realtime/legacy/tripupdates`, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
             const data = await res.json();
+            const now = Math.floor(Date.now() / 1000);
             
-            let activeBuses = [];
-            if (data.response && data.response.entity) {
-                stats.innerText = `FLEET SYNC: ${data.response.entity.length} VEHICLES ONLINE`;
-                
-                data.response.entity.forEach(item => {
-                    const v = item.vehicle;
-                    if (!v || !v.trip) return;
+            let found = [];
+            let total = 0;
 
-                    const rId = v.trip.route_id.toUpperCase();
-                    if (rId.includes('24B') || rId.includes('24R')) {
-                        activeBuses.push({
-                            route: rId.split('-')[0],
-                            status: v.current_status || 'IN_TRANSIT_TO',
-                            stopId: v.stop_id || 'En Route',
-                            lastSeen: v.timestamp
-                        });
+            if (data.response && data.response.entity) {
+                total = data.response.entity.length;
+                
+                data.entity = data.response.entity.forEach(item => {
+                    const tu = item.trip_update;
+                    if (!tu || !tu.trip) return;
+
+                    const rId = tu.trip.route_id;
+                    
+                    // BROAD SEARCH: Catch any route starting with 24 (24B, 24R, 243, 246, etc)
+                    if (rId.startsWith('24')) {
+                        const updates = [].concat(tu.stop_time_update || []);
+                        const match = updates.find(s => String(s.stop_id).trim() === MY_STOP);
+
+                        if (match) {
+                            const t = (match.arrival || match.departure).time;
+                            if (t > now - 60) {
+                                // Map technical IDs back to friendly names
+                                let displayRoute = rId.split('-')[0];
+                                if(displayRoute === "243") displayRoute = "24B";
+                                if(displayRoute === "246") displayRoute = "24R";
+
+                                found.push({ route: displayRoute, ts: t });
+                            }
+                        }
                     }
                 });
             }
 
-            timeDisp.innerText = `Live Feed: ${new Date().toLocaleTimeString()}`;
-            render(activeBuses);
+            consoleLog.innerText = `SCAN: ${total} BUSES | FOUND: ${found.length}`;
+            status.innerText = `Last Updated: ${new Date().toLocaleTimeString()}`;
+            render(found.sort((a,b) => a.ts - b.ts));
 
         } catch (e) {
-            timeDisp.innerText = "GPS Connection Offline";
+            consoleLog.innerText = "CONNECTION ERROR";
         }
     }
 
     function render(buses) {
         const list = document.getElementById('bus-list');
         if (buses.length === 0) {
-            list.innerHTML = '<div style="padding:40px; text-align:center; color:#999;">No 24B/24R buses found with active GPS.<br><small>This is common between scheduled services.</small></div>';
+            list.innerHTML = '<div class="empty">No 24-series buses currently<br>tracking towards Stop 8274.</div>';
             return;
         }
 
         list.innerHTML = buses.map(b => {
-            const isAtOurStop = String(b.stopId) === MY_STOP_ID;
-            const statusLabel = b.status.replace(/_/g, ' ');
-            
+            const m = Math.floor((b.ts - Math.floor(Date.now()/1000)) / 60);
             return `
-                <div class="bus-row" style="${isAtOurStop ? 'background:#e3f2fd; border-left:5px solid #2196f3;' : ''}">
+                <div class="bus-row">
                     <div class="route-badge">${b.route}</div>
-                    <div class="info">
-                        <strong>${isAtOurStop ? '★ AT YOUR STOP' : 'On Route'}</strong><br>
-                        <span class="status-tag ${b.status === 'STOPPED_AT' ? 'stopped' : 'moving'}">${statusLabel}</span>
-                    </div>
-                    <div class="dist">
-                        <small style="display:block; font-size:0.6rem; color:#999;">LAST STOP ID</small>
-                        ${b.stopId}
+                    <div class="details"><strong>Live Approach</strong><br><small>Sandringham Rd</small></div>
+                    <div class="time-info">
+                        <span class="mins">${m <= 0 ? 'DUE' : m + 'm'}</span>
                     </div>
                 </div>
             `;
         }).join('');
     }
 
-    setInterval(fetchGPS, 15000);
-    fetchGPS();
+    setInterval(deepScan, 20000);
+    deepScan();
 </script>
 </body>
 </html>
