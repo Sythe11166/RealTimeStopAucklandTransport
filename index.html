@@ -61,7 +61,7 @@ async function loadBuses() {
 
     try {
         const response = await fetch(
-            "https://api.at.govt.nz/realtime/gtfs/v3/trip-updates",
+            "https://api.at.govt.nz/realtime/gtfs/v1/trip-updates",
             {
                 headers: {
                     "Ocp-Apim-Subscription-Key": API_KEY
