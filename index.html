@@ -3,74 +3,91 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AT Legacy Deep Search</title>
+    <title>AT Live Approach Tracker</title>
     <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: white; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 400px; background: #2c3e50; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
-        .header { background: #00457c; padding: 20px; text-align: center; border-bottom: 3px solid #f1c40f; }
-        .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #34495e; background: #2c3e50; }
-        .route-badge { background: #f1c40f; color: #000; width: 50px; height: 35px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-weight: 900; }
-        .details { flex: 1; margin-left: 15px; }
-        .occupancy { font-size: 0.75rem; color: #bdc3c7; }
-        .time-info { text-align: right; }
-        .mins { color: #2ecc71; font-weight: bold; font-size: 1.2rem; }
-        .clock { color: #95a5a6; font-size: 0.8rem; display: block; }
-        .debug-info { font-size: 0.65rem; color: #7f8c8d; padding: 10px; text-align: center; background: #1c2833; }
+        :root { --at-blue: #00457c; --at-green: #00875a; --at-light: #f9f9f9; --occ-gold: #e67e22; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #eef2f3; display: flex; justify-content: center; padding: 20px; }
+        
+        .card { width: 100%; max-width: 550px; background: white; border-radius: 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.15); overflow: hidden; }
+        
+        .header { background: white; padding: 25px; border-bottom: 3px solid var(--at-blue); }
+        .header h2 { margin: 0; color: var(--at-blue); font-size: 1.6rem; }
+        
+        .bus-row { display: flex; align-items: center; padding: 20px; border-bottom: 1px solid #eee; transition: 0.2s; }
+        .bus-row:hover { background: #f0f7ff; }
+
+        .route-badge { 
+            background: var(--at-blue); color: white; width: 65px; height: 45px; 
+            display: flex; align-items: center; justify-content: center; 
+            border-radius: 8px; font-weight: 800; font-size: 1.2rem; flex-shrink: 0; 
+        }
+
+        .details { flex: 1; margin-left: 20px; }
+        .service-label { font-weight: 600; color: #333; font-size: 1.1rem; }
+        
+        .occupancy { color: var(--occ-gold); font-size: 0.9rem; font-weight: 600; margin-top: 4px; display: flex; align-items: center; }
+        .occ-icon { font-size: 1.1rem; margin-right: 5px; }
+
+        .time-info { text-align: right; min-width: 100px; }
+        .mins { color: var(--at-green); font-weight: 800; font-size: 1.4rem; display: block; }
+        .clock { color: #888; font-size: 0.85rem; margin-top: 3px; }
+        
+        .footer { background: #f8f9fa; padding: 10px 20px; font-size: 0.7rem; color: #aaa; text-align: right; border-top: 1px solid #eee; }
+        .loading { padding: 60px; text-align: center; color: #999; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h2 id="stop-title" style="margin:0">Searching...</h2>
-        <small id="status">Initializing Feed</small>
+        <h2 id="stop-label">Stop Tracker</h2>
+        <div id="status-sub" style="color:#666; font-size:0.85rem; margin-top:4px;">Monitoring Approaching Buses...</div>
     </div>
+    
     <div id="bus-list">
-        <div style="padding:40px; text-align:center;">Scanning Auckland Network...</div>
+        <div class="loading">Scanning for live updates...</div>
     </div>
-    <div id="debug" class="debug-info">Trips Scanned: 0</div>
+
+    <div class="footer" id="debug-info">System Ready</div>
 </div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const STOP_ID = '8274'; // Use 7019 for Britomart to verify code works
+    const STOP_ID = '7019'; // Britomart test, change to yours
 
-    async function deepSearchBuses() {
-        const listContainer = document.getElementById('bus-list');
-        const status = document.getElementById('status');
-        const debug = document.getElementById('debug');
+    async function fetchTracker() {
+        const listDiv = document.getElementById('bus-list');
+        const debug = document.getElementById('debug-info');
         
         try {
+            // Using the Legacy feed which provides the full trip progress
             const response = await fetch(`https://api.at.govt.nz/realtime/legacy/tripupdates`, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
 
+            if (!response.ok) throw new Error("API Connection Failed");
+
             const data = await response.json();
             const now = Math.floor(Date.now() / 1000);
-            let found = [];
-            let scanCount = 0;
+            let results = [];
 
             if (data.response && data.response.entity) {
-                scanCount = data.response.entity.length;
-                
                 data.response.entity.forEach(item => {
                     const tu = item.trip_update;
                     if (!tu || !tu.stop_time_update) return;
 
+                    // Standardize to array (fixes the .find error)
                     const updates = [].concat(tu.stop_time_update);
                     
-                    // Deep check: match stop_id as string, number, or padded string
-                    const myStop = updates.find(s => 
-                        String(s.stop_id).trim() === String(STOP_ID).trim() ||
-                        String(s.stop_id).includes(STOP_ID)
-                    );
+                    // Find our stop in the bus's future path
+                    const ourStopUpdate = updates.find(s => String(s.stop_id) === String(STOP_ID));
 
-                    if (myStop) {
-                        const t = myStop.arrival || myStop.departure;
-                        if (t && t.time > now - 300) {
-                            found.push({
+                    if (ourStopUpdate) {
+                        const timeData = ourStopUpdate.arrival || ourStopUpdate.departure;
+                        if (timeData && timeData.time > now - 60) {
+                            results.push({
                                 route: tu.trip.route_id.split('-')[0],
-                                ts: parseInt(t.time),
+                                ts: parseInt(timeData.time),
                                 occ: tu.vehicle ? tu.vehicle.occupancy_status : -1
                             });
                         }
@@ -78,48 +95,54 @@
                 });
             }
 
-            debug.innerText = `Trips Scanned: ${scanCount} | Found: ${found.length}`;
-            status.innerText = "Live Update Successful";
-            document.getElementById('stop-title').innerText = `Stop #${STOP_ID}`;
+            document.getElementById('stop-label').innerText = `Stop ${STOP_ID}`;
+            debug.innerText = `Last Sync: ${new Date().toLocaleTimeString()} | ${data.response.entity.length} Trips Parsed`;
             
-            render(found.sort((a,b) => a.ts - b.ts).slice(0, 5));
+            // SHOW TOP 6
+            render(results.sort((a,b) => a.ts - b.ts).slice(0, 6));
 
         } catch (err) {
-            status.innerText = "Connection Error";
-            console.error(err);
+            debug.innerText = "Error: " + err.message;
         }
+    }
+
+    function getOccText(val) {
+        const labels = ["Empty", "Many Seats", "Seats Available", "Standing Room", "Limited Space", "Full"];
+        return labels[val] || "Seats Available";
     }
 
     function render(buses) {
         const list = document.getElementById('bus-list');
         if (buses.length === 0) {
-            list.innerHTML = '<div style="padding:40px; text-align:center;">No buses found in feed.<br><small>This happens if buses are > 30 mins away.</small></div>';
+            list.innerHTML = '<div class="loading">No approaching buses found.<br><small>If you expect a bus, it may not have started its route yet.</small></div>';
             return;
         }
 
-        const labels = ["Empty", "Seats Avail", "Few Seats", "Standing", "Full", "Closed"];
-        
         list.innerHTML = buses.map(b => {
-            const mins = Math.floor((b.ts - Math.floor(Date.now()/1000)) / 60);
-            const time = new Date(b.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            const diffSeconds = b.ts - Math.floor(Date.now()/1000);
+            const mins = Math.floor(diffSeconds / 60);
+            const timeStr = new Date(b.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            
             return `
                 <div class="bus-row">
                     <div class="route-badge">${b.route}</div>
                     <div class="details">
-                        <div style="font-weight:bold">Active Service</div>
-                        <div class="occupancy">👥 ${labels[b.occ] || 'Available'}</div>
+                        <div class="service-label">Approaching Stop</div>
+                        <div class="occupancy">
+                            <span class="occ-icon">👤</span> ${getOccText(b.occ)}
+                        </div>
                     </div>
                     <div class="time-info">
-                        <div class="mins">${mins <= 0 ? 'DUE' : mins + 'm'}</div>
-                        <div class="clock">${time}</div>
+                        <span class="mins">${mins <= 0 ? 'DUE' : mins + '<small style="font-size:0.7rem; margin-left:2px;">min</small>'}</span>
+                        <span class="clock">${timeStr}</span>
                     </div>
                 </div>
             `;
         }).join('');
     }
 
-    deepSearchBuses();
-    setInterval(deepSearchBuses, 30000);
+    fetchTracker();
+    setInterval(fetchTracker, 20000); // Slightly faster refresh for "approaching" accuracy
 </script>
 
 </body>
