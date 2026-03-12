@@ -3,109 +3,132 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auckland Transport Live Stop Tracker</title>
+    <title>Auckland Transport Live Tracker</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f4f9; padding: 20px; }
-        .tracker-card { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        h2 { color: #00457c; text-align: center; margin-top: 0; }
-        .bus-row { display: flex; align-items: center; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; }
-        .bus-row:last-child { border-bottom: none; }
-        .route-no { background: #00457c; color: white; padding: 5px 10px; border-radius: 6px; font-weight: bold; min-width: 45px; text-align: center; }
-        .bus-info { flex-grow: 1; margin-left: 15px; }
-        .time-info { text-align: right; }
-        .minutes { font-size: 1.2em; font-weight: bold; color: #2ecc71; }
-        .scheduled { color: #7f8c8d; font-size: 0.9em; }
-        .occupancy { font-size: 0.8em; color: #666; margin-top: 4px; }
-        .loading { text-align: center; color: #666; font-style: italic; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; padding: 20px; }
+        .tracker-card { max-width: 450px; margin: auto; background: white; border-radius: 15px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.1); }
+        .header { background: #00457c; color: white; padding: 20px; text-align: center; }
+        .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #eee; transition: background 0.2s; }
+        .route-badge { background: #212121; color: white; padding: 8px 12px; border-radius: 8px; font-weight: 800; min-width: 50px; text-align: center; font-size: 1.1em; }
+        .bus-details { flex-grow: 1; padding: 0 15px; }
+        .occupancy { font-size: 0.85em; color: #666; margin-top: 3px; }
+        .time-box { text-align: right; min-width: 80px; }
+        .live-mins { color: #00875a; font-weight: bold; font-size: 1.2em; }
+        .scheduled-time { color: #5e6c84; font-size: 0.9em; }
+        .error-msg { color: #d63031; padding: 20px; text-align: center; font-weight: bold; }
+        .no-data { padding: 30px; text-align: center; color: #777; }
     </style>
 </head>
 <body>
 
 <div class="tracker-card">
-    <h2 id="stop-name">Loading Stop...</h2>
-    <div id="bus-list" class="loading">Fetching live data...</div>
+    <div class="header">
+        <h2 id="stop-label" style="margin:0">Bus Stop Tracker</h2>
+        <small id="stop-id-display">Loading...</small>
+    </div>
+    <div id="bus-list">
+        <div class="no-data">Initializing connection...</div>
+    </div>
 </div>
 
 <script>
-    // CONFIGURATION
-    const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5'; // Replace with your AT Developer Key
-    const STOP_ID = '8274-e1c68f23';           // Replace with your specific Auckland Stop ID (e.g., 7019 for Britomart)
+    const API_KEY = 'YOUR_AT_API_KEY'; 
+    const STOP_ID = '7019'; // Use your stop number (e.g., 7019, 1316, etc.)
 
-    async function fetchTracker() {
+    async function updateTracker() {
+        const listContainer = document.getElementById('bus-list');
+        document.getElementById('stop-id-display').innerText = `Stop #${STOP_ID}`;
+
         try {
-            // 1. Fetch Stop Information (Static)
-            // 2. Fetch Real-time Trip Updates
-            const response = await fetch(`https://api.at.govt.nz/v3/public/realtime/stopupdates?stop_id=${STOP_ID}`, {
+            // AT API endpoint for Realtime Trip Updates filtered by Stop ID
+            const url = `https://api.at.govt.nz/v2/public/realtime/stopupdates?stop_id=${STOP_ID}`;
+            
+            const response = await fetch(url, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
-            const data = await response.json();
 
-            if (!data.response || !data.response.entity) {
-                document.getElementById('bus-list').innerHTML = "No active buses found for this stop.";
+            if (!response.ok) throw new Error(`API Error: ${response.status}`);
+
+            const data = await response.json();
+            
+            // Debugging: If no buses show, check your console (F12) to see the raw data
+            console.log("AT Data Received:", data);
+
+            if (!data.response || !data.response.entity || data.response.entity.length === 0) {
+                listContainer.innerHTML = '<div class="no-data">No upcoming buses found.<br><small>Buses might be too far away or the service is ended for the day.</small></div>';
                 return;
             }
 
-            const arrivals = data.response.entity
-                .map(entity => {
-                    const update = entity.trip_update.stop_time_update;
-                    const scheduledTime = new Date(update.arrival.time * 1000);
-                    const diffMs = scheduledTime - new Date();
-                    const diffMins = Math.round(diffMs / 60000);
-                    
-                    return {
-                        route: entity.trip_update.trip.route_id, // Note: You may need to map route_id to Route Number via GTFS Static API
-                        minutes: diffMins,
-                        timeStr: scheduledTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        isActive: diffMins <= 30 && diffMins >= -1, // Simple logic for "active"
-                        // AT provides occupancy as an enum: 0 (Empty) to 6 (Full)
-                        occupancy: entity.trip_update.vehicle?.occupancy_status || "Unknown"
-                    };
-                })
-                .filter(bus => bus.minutes >= -1) // Remove buses that already passed
+            const now = Math.floor(Date.now() / 1000);
+            
+            let busData = data.response.entity.map(item => {
+                const update = item.trip_update;
+                const stopUpdate = update.stop_time_update; 
+                
+                // Get the time (AT usually sends it in seconds)
+                const arrivalTime = stopUpdate.arrival ? stopUpdate.arrival.time : stopUpdate.departure.time;
+                const waitSeconds = arrivalTime - now;
+                const waitMins = Math.floor(waitSeconds / 60);
+
+                return {
+                    route: update.trip.route_id.split('-')[0], // Tries to grab the first part of the ID
+                    arrivalTime: new Date(arrivalTime * 1000),
+                    minutes: waitMins,
+                    occupancy: update.vehicle ? update.vehicle.occupancy_status : -1
+                };
+            });
+
+            // Sort by soonest and take the top 5
+            busData = busData
+                .filter(b => b.minutes > -2) // Show buses arriving now or in the future
                 .sort((a, b) => a.minutes - b.minutes)
                 .slice(0, 5);
 
-            renderBuses(arrivals);
-        } catch (error) {
-            document.getElementById('bus-list').innerHTML = "Error loading data. Check API Key.";
+            renderBuses(busData);
+
+        } catch (err) {
+            console.error(err);
+            listContainer.innerHTML = `<div class="error-msg">Failed to load data.<br><small>${err.message}</small></div>`;
         }
     }
 
-    function getOccupancyText(status) {
-        const levels = {
-            0: "Empty", 1: "Many seats available", 2: "Few seats available", 
-            3: "Standing room only", 4: "Crushed standing room", 5: "Full", 6: "Not accepting passengers"
+    function getOccupancyLabel(status) {
+        const map = {
+            0: "Many seats", 1: "Seats available", 2: "Few seats",
+            3: "Standing only", 4: "Full", 5: "Not Boarding"
         };
-        return levels[status] || "Occupancy unavailable";
+        return map[status] || "No data";
     }
 
     function renderBuses(buses) {
-        const list = document.getElementById('bus-list');
-        list.innerHTML = '';
-        document.getElementById('stop-name').innerText = `Stop #${STOP_ID}`;
+        const listContainer = document.getElementById('bus-list');
+        listContainer.innerHTML = '';
 
         buses.forEach(bus => {
-            const div = document.createElement('div');
-            div.className = 'bus-row';
-            div.innerHTML = `
-                <div class="route-no">${bus.route}</div>
-                <div class="bus-info">
-                    <strong>To City Centre</strong>
-                    <div class="occupancy">👥 ${getOccupancyText(bus.occupancy)}</div>
+            const isLive = bus.minutes < 30; // Consider "Live" if within 30 mins
+            const timeDisplay = bus.arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            
+            const row = document.createElement('div');
+            row.className = 'bus-row';
+            row.innerHTML = `
+                <div class="route-badge">${bus.route}</div>
+                <div class="bus-details">
+                    <strong>Towards City/Destination</strong>
+                    <div class="occupancy">👥 ${getOccupancyLabel(bus.occupancy)}</div>
                 </div>
-                <div class="time-info">
-                    <div class="${bus.isActive ? 'minutes' : 'scheduled'}">
-                        ${bus.isActive ? bus.minutes + ' min' : bus.timeStr}
-                    </div>
-                    ${bus.isActive ? `<div class="scheduled">${bus.timeStr}</div>` : ''}
+                <div class="time-box">
+                    <div class="live-mins">${isLive && bus.minutes >= 0 ? bus.minutes + 'm' : ''}</div>
+                    <div class="scheduled-time">${timeDisplay}</div>
                 </div>
             `;
-            list.appendChild(div);
+            listContainer.appendChild(row);
         });
     }
 
-    fetchTracker();
-    setInterval(fetchTracker, 30000); // Refresh every 30 seconds
+    // Run once on load
+    updateTracker();
+    // Refresh every 30 seconds
+    setInterval(updateTracker, 30000);
 </script>
 
 </body>
