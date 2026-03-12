@@ -3,49 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AT High-Sensitivity Tracker</title>
+    <title>AT Live Tracker Pro</title>
     <style>
-        :root { --at-blue: #00457c; --at-green: #00875a; --at-light: #f9f9f9; --occ-gold: #e67e22; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: #eef2f3; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 550px; background: white; border-radius: 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.15); overflow: hidden; }
+        :root { --at-blue: #00457c; --at-green: #00875a; --at-red: #d63031; --occ-gold: #f39c12; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #eaeff2; display: flex; justify-content: center; padding: 20px; }
+        
+        .card { width: 100%; max-width: 550px; background: white; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.1); overflow: hidden; border: 1px solid #d1d9e0; }
+        
         .header { background: white; padding: 25px; border-bottom: 3px solid var(--at-blue); }
-        .header h2 { margin: 0; color: var(--at-blue); font-size: 1.6rem; }
+        .search-box { display: flex; gap: 10px; margin-top: 15px; }
+        .search-box input { flex: 1; padding: 10px 15px; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; outline: none; }
+        .search-box input:focus { border-color: var(--at-blue); }
+        .search-box button { background: var(--at-blue); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+
         .bus-row { display: flex; align-items: center; padding: 20px; border-bottom: 1px solid #eee; transition: 0.2s; }
-        .route-badge { background: var(--at-blue); color: white; width: 65px; height: 45px; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: 800; font-size: 1.2rem; flex-shrink: 0; }
+        .bus-row:hover { background: #f4f8fb; }
+
+        .route-badge { 
+            background: var(--at-blue); color: white; width: 65px; height: 45px; 
+            display: flex; align-items: center; justify-content: center; 
+            border-radius: 10px; font-weight: 800; font-size: 1.2rem; flex-shrink: 0; 
+        }
+
         .details { flex: 1; margin-left: 20px; }
         .service-label { font-weight: 600; color: #333; font-size: 1.1rem; }
-        .occupancy { color: var(--occ-gold); font-size: 0.9rem; font-weight: 600; margin-top: 4px; display: flex; align-items: center; }
+        
+        .occupancy { color: var(--occ-gold); font-size: 0.9rem; font-weight: 600; margin-top: 5px; display: flex; align-items: center; }
+        
         .time-info { text-align: right; min-width: 100px; }
-        .mins { color: var(--at-green); font-weight: 800; font-size: 1.4rem; display: block; }
-        .clock { color: #888; font-size: 0.85rem; margin-top: 3px; }
-        .footer { background: #f8f9fa; padding: 10px 20px; font-size: 0.7rem; color: #aaa; text-align: right; border-top: 1px solid #eee; }
-        .loading { padding: 60px; text-align: center; color: #999; }
+        .mins { color: var(--at-green); font-weight: 800; font-size: 1.5rem; display: block; }
+        
+        /* Pulse Animation for Due Buses */
+        .pulse { animation: pulse-red 1.5s infinite; color: var(--at-red) !important; }
+        @keyframes pulse-red {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .clock { color: #888; font-size: 0.85rem; margin-top: 4px; }
+        .footer { background: #f8f9fa; padding: 12px 20px; font-size: 0.7rem; color: #999; text-align: space-between; display: flex; justify-content: space-between; }
+        .loading { padding: 60px; text-align: center; color: #999; font-style: italic; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h2 id="stop-label">Stop Tracker</h2>
-        <div id="status-sub" style="color:#666; font-size:0.85rem; margin-top:4px;">Scanning All Network Trips...</div>
+        <h2 id="display-stop" style="margin:0; color: var(--at-blue);">Auckland Transport</h2>
+        <div class="search-box">
+            <input type="text" id="stopInput" placeholder="Enter Stop ID (e.g. 7019)">
+            <button onclick="changeStop()">Track</button>
+        </div>
     </div>
-    <div id="bus-list"><div class="loading">Searching...</div></div>
-    <div class="footer" id="debug-info">System Ready</div>
+    
+    <div id="bus-list">
+        <div class="loading">Enter a Stop ID to begin...</div>
+    </div>
+
+    <div class="footer">
+        <span id="sync-status">Standby</span>
+        <span id="last-update">--:--</span>
+    </div>
 </div>
 
 <script>
-    const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const STOP_ID = '8274'; 
+    const API_KEY = 'YOUR_AT_API_KEY'; // Ensure this is your actual key
+    let currentStop = '7019'; // Default starting stop
 
     async function fetchTracker() {
         const listDiv = document.getElementById('bus-list');
-        const debug = document.getElementById('debug-info');
+        const status = document.getElementById('sync-status');
+        const updateTime = document.getElementById('last-update');
         
         try {
-            // We use the legacy tripupdates but look for "Scheduled" times if "Realtime" is missing
             const response = await fetch(`https://api.at.govt.nz/realtime/legacy/tripupdates`, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
+
+            if (!response.ok) throw new Error("Connection failed");
 
             const data = await response.json();
             const now = Math.floor(Date.now() / 1000);
@@ -57,64 +93,68 @@
                     if (!tu || !tu.stop_time_update) return;
 
                     const updates = [].concat(tu.stop_time_update);
-                    
-                    // IMPROVED SEARCH: Handle stop_id more flexibly
-                    const myStop = updates.find(s => String(s.stop_id).trim() === String(STOP_ID).trim());
+                    const myStop = updates.find(s => String(s.stop_id).trim() === String(currentStop).trim());
 
                     if (myStop) {
-                        // Check for Arrival, then Departure, then Scheduled as fallback
-                        const timeVal = (myStop.arrival && myStop.arrival.time) || 
-                                        (myStop.departure && myStop.departure.time) || 
-                                        null;
-
-                        if (timeVal && timeVal > now - 120) {
+                        const tVal = (myStop.arrival && myStop.arrival.time) || (myStop.departure && myStop.departure.time);
+                        if (tVal && tVal > now - 120) {
                             results.push({
                                 route: tu.trip.route_id.split('-')[0],
-                                ts: parseInt(timeVal),
-                                occ: tu.vehicle ? tu.vehicle.occupancy_status : -1,
-                                isRealtime: !!(myStop.arrival && !myStop.arrival.uncertainty) 
+                                ts: parseInt(tVal),
+                                occ: tu.vehicle ? tu.vehicle.occupancy_status : -1
                             });
                         }
                     }
                 });
             }
 
-            document.getElementById('stop-label').innerText = `Stop ${STOP_ID}`;
-            debug.innerText = `Sync: ${new Date().toLocaleTimeString()} | Found ${results.length} trips`;
+            document.getElementById('display-stop').innerText = `Stop ${currentStop}`;
+            status.innerText = `Syncing: ${data.response.entity.length} trips`;
+            updateTime.innerText = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
             
-            // SHOW NEXT 6
             render(results.sort((a,b) => a.ts - b.ts).slice(0, 6));
 
         } catch (err) {
-            debug.innerText = "Error: " + err.message;
+            status.innerText = "Error: Check API Key";
+        }
+    }
+
+    function changeStop() {
+        const input = document.getElementById('stopInput').value;
+        if (input) {
+            currentStop = input;
+            document.getElementById('bus-list').innerHTML = '<div class="loading">Searching new stop...</div>';
+            fetchTracker();
         }
     }
 
     function render(buses) {
         const list = document.getElementById('bus-list');
         if (buses.length === 0) {
-            list.innerHTML = '<div class="loading">No buses found.<br><small>If a bus is 10m away, it may not have officially "started" in the AT system yet.</small></div>';
+            list.innerHTML = '<div class="loading">No active buses found.<br><small>Buses usually appear 20-30 mins before arrival.</small></div>';
             return;
         }
 
+        const labels = ["Empty", "Many Seats", "Seats Available", "Standing Room", "Limited Space", "Full"];
         const now = Math.floor(Date.now() / 1000);
+
         list.innerHTML = buses.map(b => {
             const mins = Math.floor((b.ts - now) / 60);
             const timeStr = new Date(b.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-            const occLabels = ["Empty", "Many Seats", "Seats Avail", "Standing", "Limited", "Full"];
+            const isDue = mins <= 2;
             
             return `
                 <div class="bus-row">
                     <div class="route-badge">${b.route}</div>
                     <div class="details">
-                        <div class="service-label">${mins < 15 ? 'Approaching' : 'Scheduled Service'}</div>
+                        <div class="service-label">Live Service</div>
                         <div class="occupancy">
-                            <span style="margin-right:5px">👤</span> ${occLabels[b.occ] || 'Seats Available'}
+                            <span style="margin-right:8px; font-size:1.1rem;">👤</span> ${labels[b.occ] || 'Seats Available'}
                         </div>
                     </div>
                     <div class="time-info">
-                        <span class="mins" style="color: ${mins <= 20 ? 'var(--at-green)' : '#7f8c8d'}">
-                            ${mins <= 0 ? 'DUE' : mins + '<small style="font-size:0.7rem">m</small>'}
+                        <span class="mins ${isDue ? 'pulse' : ''}">
+                            ${mins <= 0 ? 'DUE' : mins + '<small style="font-size:0.8rem">m</small>'}
                         </span>
                         <span class="clock">${timeStr}</span>
                     </div>
@@ -123,8 +163,10 @@
         }).join('');
     }
 
+    // Auto-refresh every 20 seconds
     fetchTracker();
     setInterval(fetchTracker, 20000);
 </script>
+
 </body>
 </html>
