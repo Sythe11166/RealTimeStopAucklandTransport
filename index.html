@@ -51,46 +51,58 @@ th,td{
 
 <script>
 const API_KEY = "109baa24d25a4ad2a9f94f8a52166bd5";
+const STOP_ID = "8274"; // Your bus stop
 
-async function testVehicleLocations() {
+async function loadStopBuses() {
     const table = document.getElementById("buses");
     const errorDiv = document.getElementById("error");
     table.innerHTML = "";
     errorDiv.innerText = "";
 
     try {
-        const response = await fetch("https://api.at.govt.nz/realtime/legacy/vehiclelocations", {
-            headers: { "Ocp-Apim-Subscription-Key": API_KEY }
-        });
+        // Stop monitoring endpoint for upcoming buses
+        const response = await fetch(
+            `https://api.at.govt.nz/realtime/gtfs/v1/stop-monitoring?stopId=${STOP_ID}`,
+            { headers: { "Ocp-Apim-Subscription-Key": API_KEY } }
+        );
 
         if (!response.ok) {
             throw new Error("API request failed with status " + response.status);
         }
 
         const data = await response.json();
-        console.log("Full response:", data);
+        console.log("Stop-monitoring response:", data);
 
-        const entities = Array.isArray(data.response?.entity) ? data.response.entity : [];
+        const departures = Array.isArray(data.stopMonitoring?.departures) ? data.stopMonitoring.departures : [];
 
-        if (entities.length === 0) {
-            table.innerHTML = `<tr><td colspan="3" style="text-align:center">No vehicles found</td></tr>`;
+        if (departures.length === 0) {
+            table.innerHTML = `<tr><td colspan="3" style="text-align:center">No upcoming buses</td></tr>`;
             return;
         }
 
-        // Show first 10 vehicles
-        entities.slice(0, 10).forEach(e => {
-            const vehicle = e.vehicle || {};
-            const trip = vehicle.trip || {};
-            const route = trip.routeId || "-";
-            const vehicleId = vehicle.vehicle?.id || "-";
-            const stopId = vehicle.stopId || "-";
-            const occupancy = vehicle.occupancyStatus ? vehicle.occupancyStatus.replace(/_/g, ' ') : "Unknown";
+        const now = new Date();
+
+        // Loop through departures and create table rows
+        departures.forEach(dep => {
+            const route = dep.route || "-";
+            
+            // Use estimated/live arrival if available, else scheduled
+            const depTimeStr = dep.estimatedArrival || dep.scheduledArrival;
+            if (!depTimeStr) return;
+
+            const depTime = new Date(depTimeStr);
+            const minutes = Math.round((depTime - now) / 60000);
+            const arrivalText = minutes >= 0 ? `${minutes} min` : "Departed";
+            const statusText = dep.estimatedArrival ? "Live" : "Scheduled";
+
+            // Occupancy if available
+            const occupancy = dep.occupancy ? ` (${dep.occupancy.replace(/_/g,' ')})` : "";
 
             const row = `
                 <tr>
                     <td class="route">${route}</td>
-                    <td>${vehicleId}</td>
-                    <td>${stopId} (${occupancy})</td>
+                    <td>${arrivalText}${occupancy}</td>
+                    <td>${statusText}</td>
                 </tr>
             `;
             table.innerHTML += row;
@@ -99,12 +111,13 @@ async function testVehicleLocations() {
     } catch (err) {
         console.error(err);
         errorDiv.innerText = "Error: " + err.message;
-        table.innerHTML = `<tr><td colspan="3" style="text-align:center">Unable to load vehicles</td></tr>`;
+        table.innerHTML = `<tr><td colspan="3" style="text-align:center">Unable to load buses</td></tr>`;
     }
 }
 
-testVehicleLocations();
-setInterval(testVehicleLocations, 30000);
+// Load initially and refresh every 30 seconds
+loadStopBuses();
+setInterval(loadStopBuses, 30000);
 </script>
 
 </body>
