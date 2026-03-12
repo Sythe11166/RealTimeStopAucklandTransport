@@ -50,96 +50,83 @@ th,td{
 </table>
 
 <script>
-
-const entities = data.entity || [];
-entities.forEach(entity => {
-    if (!entity.trip_update) return;
-
-    const stopUpdates = entity.trip_update.stop_time_update || [];
-    stopUpdates.forEach(stop => {
-        if (stop.stop_id !== STOP_ID) return;
-
-        const arrival = stop.arrival?.time;
-        if (!arrival) return;
-
-        const minutes = Math.round((arrival - now) / 60);
-        const row = `
-        <tr>
-            <td class="route">${entity.trip_update.trip.route_id}</td>
-            <td>${minutes} min</td>
-            <td>Live</td>
-        </tr>
-        `;
-        table.innerHTML += row;
-    });
-});
-
 const API_KEY = "109baa24d25a4ad2a9f94f8a52166bd5";
 const STOP_ID = "8274";
 
-async function loadBuses(){
+async function loadBuses() {
+    const table = document.getElementById("buses");
+    const errorDiv = document.getElementById("error");
+    table.innerHTML = "";
+    errorDiv.innerText = "";
 
-    try{
-
+    try {
         const response = await fetch(
             "https://api.at.govt.nz/realtime/gtfs/v1/trip-updates",
             {
-                headers:{
+                headers: {
                     "Ocp-Apim-Subscription-Key": API_KEY
                 }
             }
         );
 
+        if (!response.ok) {
+            throw new Error("API request failed with status " + response.status);
+        }
+
         const data = await response.json();
+        console.log("API response:", data); // <-- Debug: see full response
 
-        const table = document.getElementById("buses");
-        table.innerHTML = "";
+        const entities = Array.isArray(data.entity) ? data.entity : [];
 
-        const now = Math.floor(Date.now()/1000);
-        const data = await response.json();
-console.log(data);
+        if (entities.length === 0) {
+            table.innerHTML = `<tr><td colspan="3" style="text-align:center">No upcoming buses</td></tr>`;
+            return;
+        }
 
-        data.entity.forEach(entity => {
+        const now = Math.floor(Date.now() / 1000);
+        let hasBuses = false;
 
-            if(!entity.trip_update) return;
+        entities.forEach(entity => {
+            const tripUpdate = entity.trip_update;
+            if (!tripUpdate) return;
 
-            entity.trip_update.stop_time_update.forEach(stop => {
-
-                if(stop.stop_id != STOP_ID) return;
+            const stopUpdates = Array.isArray(tripUpdate.stop_time_update) ? tripUpdate.stop_time_update : [];
+            stopUpdates.forEach(stop => {
+                if (stop.stop_id !== STOP_ID) return;
 
                 const arrival = stop.arrival?.time;
+                const scheduled = stop.schedule?.time;
+                if (!arrival && !scheduled) return;
 
-                if(!arrival) return;
-
-                const minutes = Math.round((arrival - now)/60);
+                const minutes = arrival ? Math.round((arrival - now) / 60) : null;
+                const arrivalText = minutes !== null ? `${minutes} min` : scheduled ? new Date(scheduled * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "-";
+                const statusText = minutes !== null ? "Live" : "Scheduled";
 
                 const row = `
-                <tr>
-                    <td class="route">${entity.trip_update.trip.route_id}</td>
-                    <td>${minutes} min</td>
-                    <td>Live</td>
-                </tr>
+                    <tr>
+                        <td class="route">${tripUpdate.trip.route_id || "-"}</td>
+                        <td>${arrivalText}</td>
+                        <td>${statusText}</td>
+                    </tr>
                 `;
-
                 table.innerHTML += row;
-
+                hasBuses = true;
             });
-
         });
 
+        if (!hasBuses) {
+            table.innerHTML = `<tr><td colspan="3" style="text-align:center">No upcoming buses</td></tr>`;
+        }
+
+    } catch (err) {
+        console.error(err);
+        errorDiv.innerText = "Error: " + err.message;
+        table.innerHTML = `<tr><td colspan="3" style="text-align:center">Unable to load buses</td></tr>`;
     }
-    catch(err){
-
-        document.getElementById("error").innerText =
-            "Error: " + err.message;
-
-    }
-
 }
 
 loadBuses();
-setInterval(loadBuses,30000);
-
+setInterval(loadBuses, 30000);
 </script>
 
 </body>
