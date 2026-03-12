@@ -51,9 +51,8 @@ th,td{
 
 <script>
 const API_KEY = "109baa24d25a4ad2a9f94f8a52166bd5";
-const STOP_ID = "8274-e1c68f23"; // Your bus stop
 
-async function loadBuses() {
+async function testVehicleLocations() {
     const table = document.getElementById("buses");
     const errorDiv = document.getElementById("error");
     table.innerHTML = "";
@@ -69,40 +68,26 @@ async function loadBuses() {
         }
 
         const data = await response.json();
-        console.log("API response:", data); // Debug log
+        console.log("Vehicle locations response:", data); // debug in console
 
         const vehicles = Array.isArray(data.vehicleLocations) ? data.vehicleLocations : [];
 
-        // Filter vehicles heading to this stop
-        const arrivals = vehicles.filter(v => v.nextStopId === STOP_ID);
-
-        if (arrivals.length === 0) {
-            table.innerHTML = `<tr><td colspan="3" style="text-align:center">No upcoming buses</td></tr>`;
+        if (vehicles.length === 0) {
+            table.innerHTML = `<tr><td colspan="3" style="text-align:center">No vehicles found</td></tr>`;
             return;
         }
 
-        const now = Date.now();
-
-        arrivals.forEach(v => {
+        // Show first 10 vehicles as a test
+        vehicles.slice(0, 10).forEach(v => {
             const route = v.route || "-";
-
-            // predictedArrival in ISO format or timestamp
-            const arrivalTime = v.estimatedArrival || v.scheduledArrival;
-            if (!arrivalTime) return;
-
-            const depTime = new Date(arrivalTime);
-            const minutes = Math.round((depTime - now) / 60000);
-            const arrivalText = minutes >= 0 ? `${minutes} min` : "Departed";
-            const statusText = v.estimatedArrival ? "Live" : "Scheduled";
-
-            // Optional: occupancy info
-            const occupancy = v.occupancy ? ` (${v.occupancy.replace(/_/g, ' ')})` : "";
+            const nextStop = v.nextStopId || "-";
+            const occupancy = v.occupancy ? v.occupancy.replace(/_/g, ' ') : "Unknown";
 
             const row = `
                 <tr>
                     <td class="route">${route}</td>
-                    <td>${arrivalText}${occupancy}</td>
-                    <td>${statusText}</td>
+                    <td>${nextStop}</td>
+                    <td>${occupancy}</td>
                 </tr>
             `;
             table.innerHTML += row;
@@ -111,13 +96,13 @@ async function loadBuses() {
     } catch (err) {
         console.error(err);
         errorDiv.innerText = "Error: " + err.message;
-        table.innerHTML = `<tr><td colspan="3" style="text-align:center">Unable to load buses</td></tr>`;
+        table.innerHTML = `<tr><td colspan="3" style="text-align:center">Unable to load vehicles</td></tr>`;
     }
 }
 
-// Load initially and refresh every 30 seconds
-loadBuses();
-setInterval(loadBuses, 30000);
+// Test fetch every 30s
+testVehicleLocations();
+setInterval(testVehicleLocations, 30000);
 </script>
 
 </body>
