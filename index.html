@@ -51,6 +51,29 @@ th,td{
 
 <script>
 
+const entities = data.entity || [];
+entities.forEach(entity => {
+    if (!entity.trip_update) return;
+
+    const stopUpdates = entity.trip_update.stop_time_update || [];
+    stopUpdates.forEach(stop => {
+        if (stop.stop_id !== STOP_ID) return;
+
+        const arrival = stop.arrival?.time;
+        if (!arrival) return;
+
+        const minutes = Math.round((arrival - now) / 60);
+        const row = `
+        <tr>
+            <td class="route">${entity.trip_update.trip.route_id}</td>
+            <td>${minutes} min</td>
+            <td>Live</td>
+        </tr>
+        `;
+        table.innerHTML += row;
+    });
+});
+
 const API_KEY = "109baa24d25a4ad2a9f94f8a52166bd5";
 const STOP_ID = "8274";
 
@@ -73,6 +96,8 @@ async function loadBuses(){
         table.innerHTML = "";
 
         const now = Math.floor(Date.now()/1000);
+        const data = await response.json();
+console.log(data);
 
         data.entity.forEach(entity => {
 
