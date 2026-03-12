@@ -33,31 +33,53 @@
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5'; 
-    const STOP_ID = '8274-e1c68f23'; // Use your stop number (e.g., 7019, 1316, etc.)
+    const STOP_ID = '8274'; // Use your stop number (e.g., 7019, 1316, etc.)
 
-    async function updateTracker() {
-        const listContainer = document.getElementById('bus-list');
-        document.getElementById('stop-id-display').innerText = `Stop #${STOP_ID}`;
+   async function updateTracker() {
+    const listContainer = document.getElementById('bus-list');
+    // Ensure STOP_ID is a string and trimmed of whitespace
+    const cleanStopID = STOP_ID.toString().trim();
+    
+    document.getElementById('stop-id-display').innerText = `Stop #${cleanStopID}`;
 
-        try {
-            // AT API endpoint for Realtime Trip Updates filtered by Stop ID
-            const url = `https://api.at.govt.nz/v2/public/realtime/stopupdates?stop_id=${STOP_ID}`;
-            
-            const response = await fetch(url, {
-                headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
-            });
-
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
-
-            const data = await response.json();
-            
-            // Debugging: If no buses show, check your console (F12) to see the raw data
-            console.log("AT Data Received:", data);
-
-            if (!data.response || !data.response.entity || data.response.entity.length === 0) {
-                listContainer.innerHTML = '<div class="no-data">No upcoming buses found.<br><small>Buses might be too far away or the service is ended for the day.</small></div>';
-                return;
+    try {
+        // Updated URL pattern: sometimes the API prefers the stop_id as a query parameter 
+        // without the 'public' prefix depending on your subscription tier.
+        const url = `https://api.at.govt.nz/v2/realtime/stopupdates?stop_id=${cleanStopID}`;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Ocp-Apim-Subscription-Key': API_KEY,
+                'Cache-Control': 'no-cache'
             }
+        });
+
+        // If 404 persists, the API key might be tied to the "V1" or a different "V2" product
+        if (response.status === 404) {
+            throw new Error("404: Stop Not Found. Try a major stop like '7019' (Britomart) to test.");
+        }
+
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        // AT API structure check
+        if (!data.response || !data.response.entity) {
+            listContainer.innerHTML = '<div class="no-data">No live data for this stop right now.</div>';
+            return;
+        }
+
+        // ... rest of your rendering logic ...
+        renderBuses(processATData(data.response.entity));
+
+    } catch (err) {
+        console.error("Full Error:", err);
+        listContainer.innerHTML = `<div class="error-msg">${err.message}</div>`;
+    }
+}
 
             const now = Math.floor(Date.now() / 1000);
             
