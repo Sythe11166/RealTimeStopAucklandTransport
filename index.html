@@ -3,112 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stop 8274: 24-Series Tracker</title>
+    <title>Stop 8274 Tracker</title>
     <style>
         :root { --at-blue: #00457c; --at-green: #00875a; }
-        body { font-family: 'Segoe UI', sans-serif; background: #eaeff2; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 450px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: var(--at-blue); color: white; padding: 25px; text-align: center; }
-        .bus-row { display: flex; align-items: center; padding: 18px; border-bottom: 1px solid #eee; }
-        .route-badge { background: var(--at-blue); color: white; width: 60px; height: 40px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.1rem; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; display: flex; justify-content: center; padding: 20px; }
+        .card { width: 100%; max-width: 450px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: var(--at-blue); color: white; padding: 20px; text-align: center; }
+        .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
+        .route-badge { background: var(--at-blue); color: white; width: 55px; height: 35px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
         .details { flex: 1; margin-left: 15px; }
-        .time-info { text-align: right; }
-        .mins { color: var(--at-green); font-weight: 800; font-size: 1.4rem; display: block; }
-        .footer { background: #333; color: #0f0; padding: 10px; font-family: monospace; font-size: 0.7rem; text-align: center; }
-        .empty { padding: 50px; text-align: center; color: #999; font-style: italic; }
+        .time { font-weight: 800; color: var(--at-green); font-size: 1.2rem; }
+        .footer { background: #eee; padding: 8px; font-size: 0.7rem; text-align: center; color: #666; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h2 style="margin:0">Stop 8274</h2>
-        <div id="status" style="font-size:0.8rem; opacity:0.8;">Scanning Auckland Fleet...</div>
+        <h3 style="margin:0">Live Board: Stop 8274</h3>
+        <small>Sandringham Rd / Balmoral Rd</small>
     </div>
-    <div id="bus-list"><div class="empty">Starting scan...</div></div>
-    <div class="footer" id="console">Initializing...</div>
+    <div id="bus-list"><div style="padding:40px; text-align:center; color:#999;">Searching all 24-series buses...</div></div>
+    <div class="footer" id="debug">System Initializing...</div>
 </div>
 
 <script>
-    const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const MY_STOP = '8274';
+    const API_KEY = 'YOUR_AT_API_KEY';
+    const TARGET_STOP = '8274';
 
-    async function deepScan() {
+    async function updateTracker() {
         const list = document.getElementById('bus-list');
-        const consoleLog = document.getElementById('console');
-        const status = document.getElementById('status');
+        const debug = document.getElementById('debug');
         
         try {
+            // We fetch the TRIP UPDATES (Predictions)
             const res = await fetch(`https://api.at.govt.nz/realtime/legacy/tripupdates`, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
             const data = await res.json();
             const now = Math.floor(Date.now() / 1000);
             
-            let found = [];
-            let total = 0;
+            let results = [];
 
             if (data.response && data.response.entity) {
-                total = data.response.entity.length;
-                
-                data.entity = data.response.entity.forEach(item => {
+                data.response.entity.forEach(item => {
                     const tu = item.trip_update;
-                    if (!tu || !tu.trip) return;
+                    if (!tu) return;
 
-                    const rId = tu.trip.route_id;
-                    
-                    // BROAD SEARCH: Catch any route starting with 24 (24B, 24R, 243, 246, etc)
-                    if (rId.startsWith('24')) {
+                    // FUZZY ROUTE MATCH: Catch 24B, 24R, 243, 246, 24W
+                    const rid = tu.trip.route_id.toUpperCase();
+                    if (rid.startsWith('24')) {
+                        
+                        // Look for our stop in the bus's entire future itinerary
                         const updates = [].concat(tu.stop_time_update || []);
-                        const match = updates.find(s => String(s.stop_id).trim() === MY_STOP);
+                        const stopMatch = updates.find(s => String(s.stop_id).trim() === TARGET_STOP);
 
-                        if (match) {
-                            const t = (match.arrival || match.departure).time;
-                            if (t > now - 60) {
-                                // Map technical IDs back to friendly names
-                                let displayRoute = rId.split('-')[0];
-                                if(displayRoute === "243") displayRoute = "24B";
-                                if(displayRoute === "246") displayRoute = "24R";
+                        if (stopMatch) {
+                            const time = (stopMatch.arrival || stopMatch.departure).time;
+                            if (time > now - 60) {
+                                // Clean up the route name for display
+                                let label = rid.split('-')[0];
+                                if (label === "243") label = "24B";
+                                if (label === "246") label = "24R";
 
-                                found.push({ route: displayRoute, ts: t });
+                                results.push({ route: label, ts: time });
                             }
                         }
                     }
                 });
             }
 
-            consoleLog.innerText = `SCAN: ${total} BUSES | FOUND: ${found.length}`;
-            status.innerText = `Last Updated: ${new Date().toLocaleTimeString()}`;
-            render(found.sort((a,b) => a.ts - b.ts));
+            debug.innerText = `Scan: ${data.response.entity.length} buses | Found: ${results.length}`;
+            
+            if (results.length === 0) {
+                list.innerHTML = `<div style="padding:40px; text-align:center; color:#999;">
+                    No 24B/24R buses currently reporting for Stop 8274.<br>
+                    <small>Buses usually appear 15-20 mins before arrival.</small>
+                </div>`;
+            } else {
+                list.innerHTML = results.sort((a,b) => a.ts - b.ts).map(b => {
+                    const mins = Math.floor((b.ts - now) / 60);
+                    return `
+                        <div class="bus-row">
+                            <div class="route-badge">${b.route}</div>
+                            <div class="details"><strong>Approaching Stop</strong><br><small>GPS Verified</small></div>
+                            <div class="time">${mins <= 0 ? 'DUE' : mins + 'm'}</div>
+                        </div>
+                    `;
+                }).join('');
+            }
 
         } catch (e) {
-            consoleLog.innerText = "CONNECTION ERROR";
+            debug.innerText = "Connection Error";
         }
     }
 
-    function render(buses) {
-        const list = document.getElementById('bus-list');
-        if (buses.length === 0) {
-            list.innerHTML = '<div class="empty">No 24-series buses currently<br>tracking towards Stop 8274.</div>';
-            return;
-        }
-
-        list.innerHTML = buses.map(b => {
-            const m = Math.floor((b.ts - Math.floor(Date.now()/1000)) / 60);
-            return `
-                <div class="bus-row">
-                    <div class="route-badge">${b.route}</div>
-                    <div class="details"><strong>Live Approach</strong><br><small>Sandringham Rd</small></div>
-                    <div class="time-info">
-                        <span class="mins">${m <= 0 ? 'DUE' : m + 'm'}</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    setInterval(deepScan, 20000);
-    deepScan();
+    setInterval(updateTracker, 20000);
+    updateTracker();
 </script>
 </body>
 </html>
