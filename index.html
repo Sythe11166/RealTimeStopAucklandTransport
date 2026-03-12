@@ -32,13 +32,13 @@
 
 <script>
     // --- CONFIGURE HERE ---
-    const API_KEY = '6cb37daf7f5c4feda39bbf640e892074';
+    const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
     const STOP_ID = '7019'; // 7019 is Britomart (Good for testing)
     // ----------------------
 
     const endpoints = [
         `https://api.at.govt.nz/v2/public/realtime/tripupdates`, // Most common for Free/Public tier
-        `https://api.at.govt.nz/v2/realtime/tripupdates`         // Common for Auth/Partner tier
+        `https://api.at.govt.nz/realtime/legacy/tripupdates`         // Common for Auth/Partner tier
     ];
 
     async function fetchBuses() {
