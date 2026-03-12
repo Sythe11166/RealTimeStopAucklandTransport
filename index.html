@@ -3,103 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stop 8274 Tracker</title>
+    <title>Stop 8274: Ultimate Tracker</title>
     <style>
         :root { --at-blue: #00457c; --at-green: #00875a; }
-        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 450px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: var(--at-blue); color: white; padding: 20px; text-align: center; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding: 20px; }
+        .card { width: 100%; max-width: 450px; background: white; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; border-top: 5px solid var(--at-blue); }
+        .header { padding: 20px; text-align: center; border-bottom: 1px solid #eee; }
         .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
-        .route-badge { background: var(--at-blue); color: white; width: 55px; height: 35px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
-        .details { flex: 1; margin-left: 15px; }
-        .time { font-weight: 800; color: var(--at-green); font-size: 1.2rem; }
-        .footer { background: #eee; padding: 8px; font-size: 0.7rem; text-align: center; color: #666; }
+        .route-badge { background: #333; color: white; width: 60px; height: 40px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1rem; }
+        .details { flex: 1; margin-left: 15px; font-size: 0.9rem; }
+        .time { font-weight: 800; color: var(--at-green); font-size: 1.3rem; text-align: right; }
+        .footer { background: #222; color: #0f0; padding: 10px; font-family: monospace; font-size: 0.7rem; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h3 style="margin:0">Live Board: Stop 8274</h3>
-        <small>Sandringham Rd / Balmoral Rd</small>
+        <h2 style="margin:0; color:var(--at-blue)">STOP 8274</h2>
+        <div id="status" style="font-size:0.8rem; color:#666;">Monitoring All Traffic...</div>
     </div>
-    <div id="bus-list"><div style="padding:40px; text-align:center; color:#999;">Searching all 24-series buses...</div></div>
-    <div class="footer" id="debug">System Initializing...</div>
+    <div id="bus-list"><div style="padding:40px; text-align:center; color:#999;">Scanning network...</div></div>
+    <div class="footer" id="console">Initializing Deep Scan...</div>
 </div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
     const TARGET_STOP = '8274';
 
-    async function updateTracker() {
+    async function deepScan() {
         const list = document.getElementById('bus-list');
-        const debug = document.getElementById('debug');
+        const consoleLog = document.getElementById('console');
         
         try {
-            // We fetch the TRIP UPDATES (Predictions)
             const res = await fetch(`https://api.at.govt.nz/realtime/legacy/tripupdates`, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
             const data = await res.json();
             const now = Math.floor(Date.now() / 1000);
             
-            let results = [];
+            let found = [];
 
             if (data.response && data.response.entity) {
                 data.response.entity.forEach(item => {
                     const tu = item.trip_update;
                     if (!tu) return;
 
-                    // FUZZY ROUTE MATCH: Catch 24B, 24R, 243, 246, 24W
-                    const rid = tu.trip.route_id.toUpperCase();
-                    if (rid.startsWith('24')) {
-                        
-                        // Look for our stop in the bus's entire future itinerary
-                        const updates = [].concat(tu.stop_time_update || []);
-                        const stopMatch = updates.find(s => String(s.stop_id).trim() === TARGET_STOP);
+                    // CHECK EVERY STOP ON EVERY TRIP IN AUCKLAND
+                    const updates = [].concat(tu.stop_time_update || []);
+                    const match = updates.find(s => String(s.stop_id).trim() === TARGET_STOP);
 
-                        if (stopMatch) {
-                            const time = (stopMatch.arrival || stopMatch.departure).time;
-                            if (time > now - 60) {
-                                // Clean up the route name for display
-                                let label = rid.split('-')[0];
-                                if (label === "243") label = "24B";
-                                if (label === "246") label = "24R";
+                    if (match) {
+                        const t = (match.arrival || match.departure).time;
+                        if (t > now - 60) {
+                            // Translate common internal IDs to friendly names
+                            let rName = tu.trip.route_id.split('-')[0];
+                            if (rName.startsWith('240')) rName = "24B/R";
+                            if (rName === "243") rName = "24B";
+                            if (rName === "246") rName = "24R";
 
-                                results.push({ route: label, ts: time });
-                            }
+                            found.push({ route: rName, ts: t });
                         }
                     }
                 });
             }
 
-            debug.innerText = `Scan: ${data.response.entity.length} buses | Found: ${results.length}`;
+            consoleLog.innerText = `SCAN: ${data.response.entity.length} | DETECTED: ${found.length}`;
             
-            if (results.length === 0) {
-                list.innerHTML = `<div style="padding:40px; text-align:center; color:#999;">
-                    No 24B/24R buses currently reporting for Stop 8274.<br>
-                    <small>Buses usually appear 15-20 mins before arrival.</small>
-                </div>`;
+            if (found.length === 0) {
+                list.innerHTML = '<div style="padding:40px; text-align:center; color:#999;">Nothing is coming to Stop 8274 in the next 30 mins.</div>';
             } else {
-                list.innerHTML = results.sort((a,b) => a.ts - b.ts).map(b => {
-                    const mins = Math.floor((b.ts - now) / 60);
+                list.innerHTML = found.sort((a,b) => a.ts - b.ts).map(b => {
+                    const m = Math.floor((b.ts - now) / 60);
                     return `
                         <div class="bus-row">
                             <div class="route-badge">${b.route}</div>
-                            <div class="details"><strong>Approaching Stop</strong><br><small>GPS Verified</small></div>
-                            <div class="time">${mins <= 0 ? 'DUE' : mins + 'm'}</div>
+                            <div class="details"><strong>Live Approach</strong><br>8274 Match</div>
+                            <div class="time">${m <= 0 ? 'DUE' : m + 'm'}</div>
                         </div>
                     `;
                 }).join('');
             }
 
         } catch (e) {
-            debug.innerText = "Connection Error";
+            consoleLog.innerText = "API ERROR";
         }
     }
 
-    setInterval(updateTracker, 20000);
-    updateTracker();
+    setInterval(deepScan, 15000);
+    deepScan();
 </script>
 </body>
 </html>
