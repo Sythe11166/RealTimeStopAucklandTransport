@@ -3,225 +3,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auckland Transport Live Tracker</title>
+    <title>AT Full Service Tracker</title>
     <style>
-        :root {
-            --at-blue: #00457c;
-            --at-light-blue: #eef6fc;
-            --at-green: #00875a;
-            --occupancy-color: #f39c12; /* Vibrant Orange/Gold */
-        }
+        :root { --at-blue: #00457c; --at-light: #f4f7f9; --at-green: #00875a; --occ-gold: #f39c12; }
+        body { font-family: 'Segoe UI', sans-serif; background: #eaeff2; display: flex; justify-content: center; padding: 20px; }
+        
+        /* Larger, cleaner card */
+        .card { width: 100%; max-width: 550px; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); overflow: hidden; }
+        
+        .header { background: white; padding: 25px; border-bottom: 3px solid var(--at-blue); }
+        .header h2 { margin: 0; color: var(--at-blue); font-size: 1.7rem; }
+        
+        .bus-row { display: flex; align-items: center; padding: 22px; border-bottom: 1px solid #eee; transition: 0.2s; }
+        .bus-row:hover { background: var(--at-light); }
 
-        body { 
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-            background: #f8f9fa; 
-            display: flex; 
-            justify-content: center; 
-            padding: 20px; 
-        }
-
-        /* Larger Box */
-        .card { 
-            width: 100%; 
-            max-width: 550px; 
-            background: white; 
-            border-radius: 16px; 
-            box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
-            overflow: hidden; 
-            border: 1px solid #ddd;
-        }
-
-        .header { 
-            background: white; 
-            color: var(--at-blue); 
-            padding: 25px; 
-            text-align: left; 
-            border-bottom: 2px solid var(--at-blue);
-        }
-
-        .header h2 { margin: 0; font-size: 1.6rem; letter-spacing: -0.5px; }
-
-        .bus-row { 
-            display: flex; 
-            align-items: center; 
-            padding: 20px; 
-            border-bottom: 1px solid #f0f0f0; 
-            transition: background 0.2s;
-        }
-
-        .bus-row:hover { background: var(--at-light-blue); }
-
-        /* Blue Route Numbers */
+        /* Blue Route Badges */
         .route-badge { 
-            background: var(--at-blue); 
-            color: white; 
-            width: 65px; 
-            height: 45px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            border-radius: 8px; 
-            font-weight: 700; 
-            font-size: 1.2rem; 
-            flex-shrink: 0; 
+            background: var(--at-blue); color: white; width: 70px; height: 48px; 
+            display: flex; align-items: center; justify-content: center; 
+            border-radius: 10px; font-weight: 800; font-size: 1.3rem; flex-shrink: 0; 
         }
 
         .details { flex: 1; margin-left: 20px; }
+        .service-type { font-weight: 600; color: #333; font-size: 1.1rem; }
         
-        .service-label { 
-            font-weight: 600; 
-            color: #333; 
-            font-size: 1.05rem; 
-        }
+        /* High visibility occupancy */
+        .occupancy { color: var(--occ-gold); font-size: 0.95rem; font-weight: 600; margin-top: 4px; display: flex; align-items: center; }
+        .occ-icon { font-size: 1.2rem; margin-right: 6px; }
 
-        /* Different Colour Occupancy */
-        .occupancy { 
-            font-size: 0.9rem; 
-            color: var(--occupancy-color); 
-            margin-top: 5px; 
-            font-weight: 500;
-        }
-
-        .time-info { text-align: right; margin-left: 15px; }
-
-        .mins { 
-            color: var(--at-green); 
-            font-weight: 800; 
-            font-size: 1.4rem; 
-            display: block; 
-        }
-
-        .clock { 
-            color: #7f8c8d; 
-            font-size: 0.9rem; 
-            font-weight: 400;
-        }
-
-        .debug-bar { 
-            background: #f1f1f1; 
-            color: #999; 
-            font-size: 0.7rem; 
-            padding: 8px 20px; 
-            text-align: right; 
-            text-transform: uppercase;
-        }
-
-        .empty { padding: 60px; text-align: center; color: #999; font-style: italic; }
+        .time-info { text-align: right; min-width: 90px; }
+        .mins { color: var(--at-green); font-weight: 800; font-size: 1.5rem; display: block; line-height: 1; }
+        .clock { color: #7f8c8d; font-size: 0.95rem; margin-top: 4px; display: block; }
+        
+        .status-footer { background: #f8f9fa; padding: 10px 20px; font-size: 0.75rem; color: #999; text-align: right; border-top: 1px solid #eee; }
+        .loading { padding: 60px; text-align: center; color: #999; font-style: italic; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h2 id="stop-title">Stop Tracker</h2>
-        <span id="update-time" style="font-size: 0.8rem; color: #666;">Waiting for data...</span>
+        <h2 id="stop-name">Auckland Transport</h2>
+        <div id="stop-id-sub" style="color:#666; font-size:0.9rem; margin-top:5px;">Stop ID: Loading...</div>
     </div>
     
     <div id="bus-list">
-        <div class="empty">Initialising live feed...</div>
+        <div class="loading">Loading full schedule...</div>
     </div>
 
-    <div id="debug" class="debug-bar">Trips Scanned: 0</div>
+    <div class="status-footer" id="last-update">Syncing with AT Servers...</div>
 </div>
 
 <script>
-    const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const STOP_ID = '8274'; // Use 7019 for Britomart, or your specific stop
+    // --- SETTINGS ---
+    const API_KEY = 'YOUR_AT_API_KEY';
+    const STOP_ID = '7019'; // Britomart
+    // ----------------
 
-    async function updateTracker() {
+    async function fetchFullSchedule() {
         const listContainer = document.getElementById('bus-list');
-        const updateTime = document.getElementById('update-time');
-        const debug = document.getElementById('debug');
+        const footer = document.getElementById('last-update');
         
         try {
-            const response = await fetch(`https://api.at.govt.nz/realtime/legacy/tripupdates`, {
+            // This restricted endpoint returns both Realtime AND Static Schedule
+            const url = `https://api.at.govt.nz/v2/public-restricted/departures/${STOP_ID}`;
+            
+            const response = await fetch(url, {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
 
-            if (!response.ok) throw new Error("Connection failed");
+            if (!response.ok) throw new Error("API Limit reached or Stop not found");
 
             const data = await response.json();
-            const now = Math.floor(Date.now() / 1000);
-            let found = [];
-
-            if (data.response && data.response.entity) {
-                debug.innerText = `Trips Scanned: ${data.response.entity.length}`;
-                
-                data.response.entity.forEach(item => {
-                    const tu = item.trip_update;
-                    if (!tu || !tu.stop_time_update) return;
-
-                    const updates = [].concat(tu.stop_time_update);
-                    const myStop = updates.find(s => String(s.stop_id).trim() === String(STOP_ID).trim());
-
-                    if (myStop) {
-                        const t = myStop.arrival || myStop.departure;
-                        if (t && t.time > now - 120) {
-                            found.push({
-                                route: tu.trip.route_id.split('-')[0],
-                                ts: parseInt(t.time),
-                                occ: tu.vehicle ? tu.vehicle.occupancy_status : -1
-                            });
-                        }
-                    }
-                });
+            
+            // AT's departures endpoint usually nests results in .response
+            const departures = data.response;
+            if (!departures || departures.length === 0) {
+                listContainer.innerHTML = '<div class="loading">No services scheduled for the next 24 hours.</div>';
+                return;
             }
 
-            document.getElementById('stop-title').innerText = `Stop ${STOP_ID}`;
-            updateTime.innerText = `Last updated: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+            document.getElementById('stop-name').innerText = `Stop ${STOP_ID}`;
+            document.getElementById('stop-id-sub').innerText = `Auckland Metro Services`;
+
+            // Sort and take the next 6
+            const next6 = departures.slice(0, 6);
             
-            // NEXT 6 SERVICES SLICE
-            render(found.sort((a,b) => a.ts - b.ts).slice(0, 6));
-
-        } catch (err) {
-            updateTime.innerText = "Offline - Check Connection";
-        }
-    }
-
-    function getOccLabel(val) {
-        const icons = ["󰄰", "󰄱", "󰄲", "󰄳", "󰄴", "󰄵"]; // Fallback icons
-        const labels = [
-            "Empty", 
-            "Many seats available", 
-            "Seats available", 
-            "Standing room only", 
-            "Limited space", 
-            "Full"
-        ];
-        return labels[val] || "Seats available";
-    }
-
-    function render(buses) {
-        const list = document.getElementById('bus-list');
-        if (buses.length === 0) {
-            list.innerHTML = '<div class="empty">No upcoming services found for this stop.</div>';
-            return;
-        }
-
-        list.innerHTML = buses.map(b => {
-            const mins = Math.floor((b.ts - Math.floor(Date.now()/1000)) / 60);
-            const time = new Date(b.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-            
-            return `
-                <div class="bus-row">
-                    <div class="route-badge">${b.route}</div>
-                    <div class="details">
-                        <div class="service-label">Live Service</div>
-                        <div class="occupancy">
-                            <span style="font-size:1.1rem">👤</span> ${getOccLabel(b.occ)}
+            listContainer.innerHTML = next6.map(bus => {
+                // Calculate time
+                const scheduledTime = new Date(bus.ScheduledDepartureTime);
+                const actualTime = bus.RealtimeDepartureTime ? new Date(bus.RealtimeDepartureTime) : scheduledTime;
+                
+                const diffMs = actualTime - new Date();
+                const diffMins = Math.round(diffMs / 60000);
+                
+                // Styling logic
+                const isLive = bus.IsRealtime && diffMins <= 30 && diffMins >= 0;
+                const timeStr = scheduledTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                
+                return `
+                    <div class="bus-row">
+                        <div class="route-badge">${bus.RouteShortName || bus.RouteVariantName.split(' ')[0]}</div>
+                        <div class="details">
+                            <div class="service-type">${bus.RouteVariantName || 'Metro Service'}</div>
+                            <div class="occupancy">
+                                <span class="occ-icon">👤</span> 
+                                ${getOccLabel(bus.OccupancyStatus)}
+                            </div>
+                        </div>
+                        <div class="time-info">
+                            <span class="mins" style="color: ${isLive ? 'var(--at-green)' : '#7f8c8d'}">
+                                ${isLive ? diffMins + '<small style="font-size:0.8rem">m</small>' : timeStr}
+                            </span>
+                            <span class="clock">${isLive ? timeStr : 'Scheduled'}</span>
                         </div>
                     </div>
-                    <div class="time-info">
-                        <div class="mins">${mins <= 0 ? 'DUE' : mins + '<span style="font-size:0.8rem">min</span>'}</div>
-                        <div class="clock">${time}</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+                `;
+            }).join('');
+
+            footer.innerText = `Last Refreshed: ${new Date().toLocaleTimeString()}`;
+
+        } catch (err) {
+            footer.innerText = `Connection Error: ${err.message}`;
+        }
     }
 
-    updateTracker();
-    setInterval(updateTracker, 30000);
+    function getOccLabel(status) {
+        const labels = {
+            "MANY_SEATS_AVAILABLE": "Many seats available",
+            "FEW_SEATS_AVAILABLE": "Few seats available",
+            "STANDING_ROOM_ONLY": "Standing room only",
+            "FULL": "Bus is full",
+            "NOT_ACCEPTING_PASSENGERS": "Not boarding"
+        };
+        return labels[status] || "Seats available";
+    }
+
+    fetchFullSchedule();
+    setInterval(fetchFullSchedule, 30000); // 30s refresh
 </script>
 
 </body>
