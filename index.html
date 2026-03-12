@@ -51,7 +51,7 @@ th,td{
 
 <script>
 const API_KEY = "109baa24d25a4ad2a9f94f8a52166bd5";
-const STOP_ENDPOINT = "https://api.at.govt.nz/realtime/legacy/vehiclelocations";
+const STOP_ID = "8274"; // Your bus stop
 
 async function loadBuses() {
     const table = document.getElementById("buses");
@@ -60,10 +60,8 @@ async function loadBuses() {
     errorDiv.innerText = "";
 
     try {
-        const response = await fetch(STOP_ENDPOINT, {
-            headers: {
-                "Ocp-Apim-Subscription-Key": API_KEY
-            }
+        const response = await fetch("https://api.at.govt.nz/realtime/legacy/vehiclelocations", {
+            headers: { "Ocp-Apim-Subscription-Key": API_KEY }
         });
 
         if (!response.ok) {
@@ -73,29 +71,32 @@ async function loadBuses() {
         const data = await response.json();
         console.log("API response:", data); // Debug log
 
-        const departures = Array.isArray(data.data?.departures) ? data.data.departures : [];
+        const vehicles = Array.isArray(data.vehicleLocations) ? data.vehicleLocations : [];
 
-        if (departures.length === 0) {
+        // Filter vehicles heading to this stop
+        const arrivals = vehicles.filter(v => v.nextStopId === STOP_ID);
+
+        if (arrivals.length === 0) {
             table.innerHTML = `<tr><td colspan="3" style="text-align:center">No upcoming buses</td></tr>`;
             return;
         }
 
-        const now = new Date();
+        const now = Date.now();
 
-        departures.forEach(dep => {
-            const route = dep.route_id || "-";
+        arrivals.forEach(v => {
+            const route = v.route || "-";
 
-            // Use predicted departure if available, else scheduled
-            const depTimeStr = dep.predicted_departure_utc || dep.scheduled_departure_utc;
-            if (!depTimeStr) return;
+            // predictedArrival in ISO format or timestamp
+            const arrivalTime = v.estimatedArrival || v.scheduledArrival;
+            if (!arrivalTime) return;
 
-            const depTime = new Date(depTimeStr);
+            const depTime = new Date(arrivalTime);
             const minutes = Math.round((depTime - now) / 60000);
             const arrivalText = minutes >= 0 ? `${minutes} min` : "Departed";
-            const statusText = dep.predicted_departure_utc ? "Live" : "Scheduled";
+            const statusText = v.estimatedArrival ? "Live" : "Scheduled";
 
-            // Optional: occupancy if available
-            const occupancy = dep.occupancy ? ` (${dep.occupancy.replace(/_/g,' ')})` : "";
+            // Optional: occupancy info
+            const occupancy = v.occupancy ? ` (${v.occupancy.replace(/_/g, ' ')})` : "";
 
             const row = `
                 <tr>
@@ -114,7 +115,7 @@ async function loadBuses() {
     }
 }
 
-// Load initially and refresh every 30s
+// Load initially and refresh every 30 seconds
 loadBuses();
 setInterval(loadBuses, 30000);
 </script>
