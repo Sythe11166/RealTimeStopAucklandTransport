@@ -2,122 +2,80 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stop 8274: Proximity Tracker</title>
+    <title>8274 API Debugger</title>
     <style>
-        :root { --at-blue: #00457c; --at-green: #00875a; --at-red: #d32f2f; }
-        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 450px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: var(--at-blue); color: white; padding: 20px; text-align: center; }
-        .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #eee; transition: all 0.3s ease; }
-        .departed { background: #fff1f1; border-left: 5px solid var(--at-red); opacity: 0.7; }
-        .route-badge { background: #333; color: white; width: 55px; height: 38px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; }
-        .details { flex: 1; margin-left: 15px; }
-        .time { text-align: right; font-weight: 800; color: var(--at-green); font-size: 1.3rem; }
-        .status-msg { font-size: 0.7rem; font-weight: bold; text-transform: uppercase; display: block; }
-        .footer { background: #111; color: #39FF14; padding: 8px; font-family: monospace; font-size: 0.65rem; text-align: center; }
+        body { font-family: monospace; background: #000; color: #0f0; padding: 20px; }
+        .log-entry { border-bottom: 1px solid #222; padding: 5px; font-size: 12px; }
+        .highlight { color: #fff; background: #c00; font-weight: bold; }
+        #controls { background: #111; padding: 10px; border: 1px solid #333; margin-bottom: 20px; position: sticky; top: 0; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <div class="header">
-        <h2 style="margin:0">STOP 8274</h2>
-        <div id="sync-time" style="font-size:0.8rem; opacity:0.8;">Syncing with AT Fleet...</div>
-    </div>
-    <div id="bus-list"><div style="padding:40px; text-align:center; color:#999;">Monitoring Sandringham Rd...</div></div>
-    <div class="footer" id="debug">Ready</div>
+<div id="controls">
+    <h3>DEBUG MODE: Auckland Fleet Scan</h3>
+    <div id="summary">Initializing...</div>
+    <p>Searching for any ID containing "24" or Stop "8274"</p>
 </div>
+
+<div id="log-output"></div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const MY_STOP = '8274';
-    // The 5 stops leading up to 8274
-    const PROXIMITY_STOPS = ['8272', '8270', '8268', '8266', '8264'];
-    
-    let knownTrips = {}; // Track trips to detect when they disappear
+    const TARGET_STOP = '8274';
 
-    async function update() {
+    async function runDiagnostic() {
+        const output = document.getElementById('log-output');
+        const summary = document.getElementById('summary');
+        
         try {
             const res = await fetch('https://api.at.govt.nz/realtime/legacy/tripupdates', {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
             const data = await res.json();
-            const now = Math.floor(Date.now() / 1000);
-            const currentTripIds = [];
             
-            if (data.response && data.response.entity) {
-                data.response.entity.forEach(item => {
-                    const tu = item.trip_update;
-                    if (!tu) return;
-
-                    const rid = tu.trip.route_id;
-                    if (!rid.startsWith('24')) return; // Only 24B/R
-
-                    const updates = [].concat(tu.stop_time_update || []);
-                    const target = updates.find(s => String(s.stop_id).trim() === MY_STOP);
-                    const isNearby = updates.some(s => PROXIMITY_STOPS.includes(String(s.stop_id).trim()));
-
-                    // Only track if it's heading to our stop OR currently in our 5-stop window
-                    if (target && isNearby) {
-                        const t = (target.arrival || target.departure).time;
-                        const tripId = tu.trip.trip_id;
-                        currentTripIds.push(tripId);
-
-                        knownTrips[tripId] = {
-                            route: rid.split('-')[0].replace('243','24B').replace('246','24R'),
-                            ts: t,
-                            departed: false
-                        };
-                    }
-                });
-
-                // Mark departed trips: If we knew about it, but it's no longer in the "incoming" list
-                Object.keys(knownTrips).forEach(id => {
-                    if (!currentTripIds.includes(id) && !knownTrips[id].departed) {
-                        knownTrips[id].departed = true;
-                        // Remove from view after 30 seconds
-                        setTimeout(() => { delete knownTrips[id]; render(); }, 30000);
-                    }
-                });
+            if (!data.response || !data.response.entity) {
+                summary.innerText = "ERROR: No entities found in API response.";
+                return;
             }
-            render();
-            document.getElementById('sync-time').innerText = "Last Sync: " + new Date().toLocaleTimeString();
-        } catch (e) { console.error(e); }
-    }
 
-    function render() {
-        const list = document.getElementById('bus-list');
-        const trips = Object.values(knownTrips).sort((a,b) => a.ts - b.ts);
-        const now = Math.floor(Date.now() / 1000);
+            const entities = data.response.entity;
+            let logs = [];
+            let matchCount = 0;
 
-        if (trips.length === 0) {
-            list.innerHTML = '<div style="padding:40px; text-align:center; color:#999;">No 24-series buses within 5 stops.</div>';
-            return;
+            entities.forEach(entity => {
+                const tu = entity.trip_update;
+                if (!tu) return;
+
+                const rId = tu.trip.route_id;
+                const updates = [].concat(tu.stop_time_update || []);
+                const hasOurStop = updates.some(s => String(s.stop_id).trim() === TARGET_STOP);
+                
+                // If it's a 24 series OR it mentions our stop, highlight it!
+                if (rId.includes('24') || hasOurStop) {
+                    matchCount++;
+                    logs.push(`
+                        <div class="log-entry highlight">
+                            MATCH FOUND! [Route: ${rId}] [Trip: ${tu.trip.trip_id}] 
+                            <br>Stops in itinerary: ${updates.map(u => u.stop_id).join(', ')}
+                        </div>
+                    `);
+                } else {
+                    // Just log the route ID of everything else so we can see the format
+                    logs.push(`<div class="log-entry">Scanning: Route ${rId}</div>`);
+                }
+            });
+
+            summary.innerText = `Scan Complete. Found ${entities.length} total buses. ${matchCount} match "24" or stop 8274.`;
+            output.innerHTML = logs.join('');
+
+        } catch (e) {
+            summary.innerText = "CRITICAL ERROR: Check API Key or Console.";
+            console.error(e);
         }
-
-        list.innerHTML = trips.map(t => {
-            const m = Math.floor((t.ts - now) / 60);
-            const statusClass = t.departed ? 'bus-row departed' : 'bus-row';
-            const statusText = t.departed ? 'DEPARTED' : (m <= 0 ? 'DUE' : m + 'm');
-            
-            return `
-                <div class="${statusClass}">
-                    <div class="route-badge">${t.route}</div>
-                    <div class="details">
-                        <strong>${t.departed ? 'Just Passed' : 'Incoming'}</strong>
-                        <span class="status-msg">${t.departed ? 'Stop 8274 Cleared' : 'Sandringham Rd'}</span>
-                    </div>
-                    <div class="time" style="color: ${t.departed ? '#d32f2f' : '#00875a'}">
-                        ${statusText}
-                    </div>
-                </div>
-            `;
-        }).join('');
     }
 
-    setInterval(update, 15000);
-    update();
+    runDiagnostic();
 </script>
 </body>
 </html>
