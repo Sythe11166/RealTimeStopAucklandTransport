@@ -3,35 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stop 8274: Ultimate Tracker</title>
+    <title>8274 Long-Range Tracker</title>
     <style>
         :root { --at-blue: #00457c; --at-green: #00875a; }
         body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 450px; background: white; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; border-top: 5px solid var(--at-blue); }
-        .header { padding: 20px; text-align: center; border-bottom: 1px solid #eee; }
+        .card { width: 100%; max-width: 480px; background: white; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: var(--at-blue); color: white; padding: 20px; text-align: center; }
         .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
-        .route-badge { background: #333; color: white; width: 60px; height: 40px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1rem; }
-        .details { flex: 1; margin-left: 15px; font-size: 0.9rem; }
-        .time { font-weight: 800; color: var(--at-green); font-size: 1.3rem; text-align: right; }
-        .footer { background: #222; color: #0f0; padding: 10px; font-family: monospace; font-size: 0.7rem; text-align: center; }
+        .route-badge { background: #333; color: white; width: 50px; height: 35px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .details { flex: 1; margin-left: 15px; font-size: 0.85rem; }
+        .time { font-weight: 800; color: var(--at-green); font-size: 1.2rem; text-align: right; min-width: 60px; }
+        .footer { background: #111; color: #39FF14; padding: 8px; font-family: monospace; font-size: 0.65rem; text-align: center; }
+        .tag { font-size: 0.65rem; text-transform: uppercase; font-weight: bold; padding: 2px 5px; border-radius: 3px; display: inline-block; margin-top: 3px; }
+        .tag-early { background: #e3f2fd; color: #1976d2; }
+        .tag-close { background: #e8f5e9; color: #2e7d32; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h2 style="margin:0; color:var(--at-blue)">STOP 8274</h2>
-        <div id="status" style="font-size:0.8rem; color:#666;">Monitoring All Traffic...</div>
+        <h2 style="margin:0">Stop 8274: Incoming</h2>
+        <div id="status" style="font-size:0.8rem; opacity:0.8;">Scanning from Start of Route...</div>
     </div>
-    <div id="bus-list"><div style="padding:40px; text-align:center; color:#999;">Scanning network...</div></div>
-    <div class="footer" id="console">Initializing Deep Scan...</div>
+    <div id="bus-list"><div style="padding:40px; text-align:center; color:#999;">Scanning all outbound trips...</div></div>
+    <div class="footer" id="console">Initializing...</div>
 </div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const TARGET_STOP = '8274-e1c68f23';
+    const TARGET_STOP = '8274';
+    
+    // Stop sequence for 24B/R leading up to 8274
+    const UPSTREAM_PATH = [
+        '5906', '5908', '5912', '8600', '8602', '8604', '8606', '8608', '8610', // New Lynn / Blockhouse
+        '8200', '8202', '8204', '8206', '8208', '8210', '8212', '8214', '8216', // Richardson Rd area
+        '8250', '8252', '8254', '8256', '8258', '8260', '8262', '8264', '8266', '8268', '8270', '8272' // Sandringham Rd
+    ];
 
-    async function deepScan() {
+    async function longRangeScan() {
         const list = document.getElementById('bus-list');
         const consoleLog = document.getElementById('console');
         
@@ -41,57 +51,67 @@
             });
             const data = await res.json();
             const now = Math.floor(Date.now() / 1000);
-            
-            let found = [];
+            let activeTrips = [];
 
             if (data.response && data.response.entity) {
                 data.response.entity.forEach(item => {
                     const tu = item.trip_update;
                     if (!tu) return;
 
-                    // CHECK EVERY STOP ON EVERY TRIP IN AUCKLAND
+                    const rid = tu.trip.route_id;
                     const updates = [].concat(tu.stop_time_update || []);
-                    const match = updates.find(s => String(s.stop_id).trim() === TARGET_STOP);
-
-                    if (match) {
-                        const t = (match.arrival || match.departure).time;
-                        if (t > now - 60) {
-                            // Translate common internal IDs to friendly names
-                            let rName = tu.trip.route_id.split('-')[0];
-                            if (rName.startsWith('240')) rName = "24B/R";
-                            if (rName === "243") rName = "24B";
-                            if (rName === "246") rName = "24R";
-
-                            found.push({ route: rName, ts: t });
+                    
+                    // 1. Is it a 24 series?
+                    if (rid.startsWith('24')) {
+                        // 2. Does it have 8274 in its future?
+                        const targetMatch = updates.find(s => String(s.stop_id).trim() === TARGET_STOP);
+                        
+                        if (targetMatch) {
+                            const t = (targetMatch.arrival || targetMatch.departure).time;
+                            if (t > now - 60) {
+                                // Find where it is right now
+                                const currentStop = updates[0].stop_id;
+                                const stopsLeft = updates.findIndex(s => String(s.stop_id).trim() === TARGET_STOP);
+                                
+                                activeTrips.push({
+                                    route: rid.split('-')[0].replace('243','24B').replace('246','24R'),
+                                    ts: t,
+                                    stopsAway: stopsLeft,
+                                    currentStop: currentStop
+                                });
+                            }
                         }
                     }
                 });
             }
 
-            consoleLog.innerText = `SCAN: ${data.response.entity.length} | DETECTED: ${found.length}`;
+            consoleLog.innerText = `NETWORK: ${data.response.entity.length} | 24s DETECTED: ${activeTrips.length}`;
             
-            if (found.length === 0) {
-                list.innerHTML = '<div style="padding:40px; text-align:center; color:#999;">Nothing is coming to Stop 8274 in the next 30 mins.</div>';
+            if (activeTrips.length === 0) {
+                list.innerHTML = '<div style="padding:40px; text-align:center; color:#999;">No buses currently on the path to 8274.</div>';
             } else {
-                list.innerHTML = found.sort((a,b) => a.ts - b.ts).map(b => {
+                list.innerHTML = activeTrips.sort((a,b) => a.ts - b.ts).map(b => {
                     const m = Math.floor((b.ts - now) / 60);
+                    const isClose = b.stopsAway < 5;
                     return `
                         <div class="bus-row">
                             <div class="route-badge">${b.route}</div>
-                            <div class="details"><strong>Live Approach</strong><br>8274 Match</div>
+                            <div class="details">
+                                <strong>${b.stopsAway} stops away</strong><br>
+                                <span class="tag ${isClose ? 'tag-close' : 'tag-early'}">
+                                    ${isClose ? 'APPROACHING' : 'ON ROUTE'}
+                                </span>
+                            </div>
                             <div class="time">${m <= 0 ? 'DUE' : m + 'm'}</div>
                         </div>
                     `;
                 }).join('');
             }
-
-        } catch (e) {
-            consoleLog.innerText = "API ERROR";
-        }
+        } catch (e) { consoleLog.innerText = "API ERROR"; }
     }
 
-    setInterval(deepScan, 15000);
-    deepScan();
+    setInterval(longRangeScan, 20000);
+    longRangeScan();
 </script>
 </body>
 </html>
