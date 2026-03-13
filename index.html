@@ -3,96 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>8274 GPS Scanner</title>
+    <title>Stop 8274: Proximity Tracker</title>
     <style>
-        :root { --at-blue: #00457c; --at-green: #00875a; }
-        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 450px; background: #2d2d2d; border-radius: 12px; overflow: hidden; border: 1px solid #444; }
-        .header { background: var(--at-blue); padding: 15px; text-align: center; }
-        .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #444; background: #333; margin: 5px; border-radius: 8px; }
-        .route-badge { background: #fff; color: #000; width: 50px; height: 35px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        :root { --at-blue: #00457c; --at-green: #00875a; --at-red: #d32f2f; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; display: flex; justify-content: center; padding: 20px; }
+        .card { width: 100%; max-width: 450px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: var(--at-blue); color: white; padding: 20px; text-align: center; }
+        .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #eee; transition: all 0.3s ease; }
+        .departed { background: #fff1f1; border-left: 5px solid var(--at-red); opacity: 0.7; }
+        .route-badge { background: #333; color: white; width: 55px; height: 38px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; }
         .details { flex: 1; margin-left: 15px; }
-        .dist { color: #39FF14; font-weight: bold; font-family: monospace; }
-        .footer { background: #000; padding: 10px; font-size: 0.7rem; color: #888; text-align: center; }
+        .time { text-align: right; font-weight: 800; color: var(--at-green); font-size: 1.3rem; }
+        .status-msg { font-size: 0.7rem; font-weight: bold; text-transform: uppercase; display: block; }
+        .footer { background: #111; color: #39FF14; padding: 8px; font-family: monospace; font-size: 0.65rem; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div class="header">
-        <h3 style="margin:0">GPS RADAR: STOP 8274</h3>
-        <small id="status">Scanning Fleet GPS...</small>
+        <h2 style="margin:0">STOP 8274</h2>
+        <div id="sync-time" style="font-size:0.8rem; opacity:0.8;">Syncing with AT Fleet...</div>
     </div>
-    <div id="bus-list"></div>
-    <div class="footer" id="debug">Total Fleet: 0</div>
+    <div id="bus-list"><div style="padding:40px; text-align:center; color:#999;">Monitoring Sandringham Rd...</div></div>
+    <div class="footer" id="debug">Ready</div>
 </div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const STOP_LAT = -36.8923; // Approximate Lat for 8274
-    const STOP_LON = 174.7441; // Approximate Lon for 8274
+    const MY_STOP = '8274';
+    // The 5 stops leading up to 8274
+    const PROXIMITY_STOPS = ['8272', '8270', '8268', '8266', '8264'];
+    
+    let knownTrips = {}; // Track trips to detect when they disappear
 
-    async function scanGPS() {
+    async function update() {
         try {
-            const res = await fetch('https://api.at.govt.nz/realtime/legacy/vehiclepositions', {
+            const res = await fetch('https://api.at.govt.nz/realtime/legacy/tripupdates', {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
             const data = await res.json();
-            const list = document.getElementById('bus-list');
-            const debug = document.getElementById('debug');
+            const now = Math.floor(Date.now() / 1000);
+            const currentTripIds = [];
             
-            let found = [];
             if (data.response && data.response.entity) {
-                debug.innerText = `Total Fleet Scanned: ${data.response.entity.length}`;
-                
                 data.response.entity.forEach(item => {
-                    const v = item.vehicle;
-                    if (!v || !v.trip) return;
+                    const tu = item.trip_update;
+                    if (!tu) return;
 
-                    // Broad search for any "24" route
-                    if (v.trip.route_id.startsWith('24')) {
-                        const dist = calculateDist(v.position.latitude, v.position.longitude, STOP_LAT, STOP_LON);
-                        
-                        // Only show buses within 10km (to filter out those finished for the day)
-                        if (dist < 10) {
-                            found.push({
-                                route: v.trip.route_id.split('-')[0].replace('243','24B').replace('246','24R'),
-                                dist: dist,
-                                status: v.current_status || "MOVING"
-                            });
-                        }
+                    const rid = tu.trip.route_id;
+                    if (!rid.startsWith('24')) return; // Only 24B/R
+
+                    const updates = [].concat(tu.stop_time_update || []);
+                    const target = updates.find(s => String(s.stop_id).trim() === MY_STOP);
+                    const isNearby = updates.some(s => PROXIMITY_STOPS.includes(String(s.stop_id).trim()));
+
+                    // Only track if it's heading to our stop OR currently in our 5-stop window
+                    if (target && isNearby) {
+                        const t = (target.arrival || target.departure).time;
+                        const tripId = tu.trip.trip_id;
+                        currentTripIds.push(tripId);
+
+                        knownTrips[tripId] = {
+                            route: rid.split('-')[0].replace('243','24B').replace('246','24R'),
+                            ts: t,
+                            departed: false
+                        };
+                    }
+                });
+
+                // Mark departed trips: If we knew about it, but it's no longer in the "incoming" list
+                Object.keys(knownTrips).forEach(id => {
+                    if (!currentTripIds.includes(id) && !knownTrips[id].departed) {
+                        knownTrips[id].departed = true;
+                        // Remove from view after 30 seconds
+                        setTimeout(() => { delete knownTrips[id]; render(); }, 30000);
                     }
                 });
             }
-
-            if (found.length === 0) {
-                list.innerHTML = '<div style="padding:40px; text-align:center;">No 24-series GPS pings nearby.</div>';
-            } else {
-                list.innerHTML = found.sort((a,b) => a.dist - b.dist).map(b => `
-                    <div class="bus-row">
-                        <div class="route-badge">${b.route}</div>
-                        <div class="details">
-                            <strong>${b.status.replace(/_/g, ' ')}</strong><br>
-                            <small>GPS Verified</small>
-                        </div>
-                        <div class="dist">${b.dist.toFixed(2)} km</div>
-                    </div>
-                `).join('');
-            }
-            document.getElementById('status').innerText = "Last Sync: " + new Date().toLocaleTimeString();
+            render();
+            document.getElementById('sync-time').innerText = "Last Sync: " + new Date().toLocaleTimeString();
         } catch (e) { console.error(e); }
     }
 
-    function calculateDist(lat1, lon1, lat2, lon2) {
-        const R = 6371;
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    function render() {
+        const list = document.getElementById('bus-list');
+        const trips = Object.values(knownTrips).sort((a,b) => a.ts - b.ts);
+        const now = Math.floor(Date.now() / 1000);
+
+        if (trips.length === 0) {
+            list.innerHTML = '<div style="padding:40px; text-align:center; color:#999;">No 24-series buses within 5 stops.</div>';
+            return;
+        }
+
+        list.innerHTML = trips.map(t => {
+            const m = Math.floor((t.ts - now) / 60);
+            const statusClass = t.departed ? 'bus-row departed' : 'bus-row';
+            const statusText = t.departed ? 'DEPARTED' : (m <= 0 ? 'DUE' : m + 'm');
+            
+            return `
+                <div class="${statusClass}">
+                    <div class="route-badge">${t.route}</div>
+                    <div class="details">
+                        <strong>${t.departed ? 'Just Passed' : 'Incoming'}</strong>
+                        <span class="status-msg">${t.departed ? 'Stop 8274 Cleared' : 'Sandringham Rd'}</span>
+                    </div>
+                    <div class="time" style="color: ${t.departed ? '#d32f2f' : '#00875a'}">
+                        ${statusText}
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 
-    setInterval(scanGPS, 10000);
-    scanGPS();
+    setInterval(update, 15000);
+    update();
 </script>
 </body>
 </html>
