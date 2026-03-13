@@ -2,81 +2,83 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>8274 Final Fix</title>
+    <title>24B/24R Route Debugger</title>
     <style>
-        body { font-family: sans-serif; background: #f0f0f0; padding: 20px; display: flex; justify-content: center; }
-        .card { width: 100%; max-width: 400px; background: white; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); overflow: hidden; }
-        .header { background: #00457c; color: white; padding: 15px; text-align: center; }
-        .bus-row { display: flex; justify-content: space-between; padding: 15px; border-bottom: 1px solid #eee; }
-        .error-box { background: #fee; color: #c00; padding: 10px; font-size: 0.8rem; margin: 10px; border-radius: 5px; display: none; }
-        .footer { font-size: 0.7rem; color: #888; text-align: center; padding: 10px; }
+        body { font-family: monospace; background: #000; color: #0f0; padding: 20px; line-height: 1.4; }
+        .bus-card { border: 1px solid #333; padding: 10px; margin-bottom: 10px; background: #111; }
+        .highlight { color: #fff; background: #00457c; padding: 2px 5px; }
+        .moving { color: #39FF14; }
+        .stopped { color: #ff4444; }
+        #header { position: sticky; top: 0; background: #000; padding-bottom: 10px; border-bottom: 1px solid #0f0; margin-bottom: 20px; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <div class="header"><h3>STOP 8274</h3></div>
-    <div id="error-display" class="error-box"></div>
-    <div id="bus-list"><div style="padding:20px; text-align:center;">Connecting to AT...</div></div>
-    <div class="footer" id="debug">System Ready</div>
+<div id="header">
+    <h2>DEBUGGING ROUTE 24B/24R</h2>
+    <div id="stats">Pinging fleet...</div>
 </div>
+
+<div id="output"></div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const STOP_ID = '8274-e1c68f23';
 
-    async function fetchData() {
-        const list = document.getElementById('bus-list');
-        const errorBox = document.getElementById('error-display');
+    async function debugRoute() {
+        const output = document.getElementById('output');
+        const stats = document.getElementById('stats');
         
         try {
-            // We use the subscription-key as a URL parameter to bypass some CORS header issues
-            const url = `https://api.at.govt.nz/realtime/legacy/tripupdates?subscription-key=${API_KEY}`;
-            
+            // We use VehiclePositions because it shows EVERY active bus regardless of their itinerary
+            const url = `https://api.at.govt.nz/realtime/legacy/vehiclepositions?subscription-key=${API_KEY}`;
             const res = await fetch(url);
-            
-            if (!res.ok) throw new Error(`Status: ${res.status}`);
-            
             const data = await res.json();
-            const now = Math.floor(Date.now() / 1000);
+            
+            const vehicles = data.response.entity;
             let found = [];
 
-            data.response.entity.forEach(item => {
-                const tu = item.trip_update;
-                if (!tu) return;
-                
-                const updates = [].concat(tu.stop_time_update || []);
-                const match = updates.find(s => String(s.stop_id) === STOP_ID);
-                
-                if (match) {
-                    const t = (match.arrival || match.departure).time;
-                    if (t > now - 60) {
-                        found.push({ route: tu.trip.route_id.split('-')[0], ts: t });
-                    }
+            vehicles.forEach(ent => {
+                const v = ent.vehicle;
+                const rid = v.trip.route_id;
+
+                if (rid.includes('24B') || rid.includes('24R')) {
+                    found.push({
+                        id: v.vehicle.id,
+                        route: rid,
+                        lat: v.position.latitude,
+                        lon: v.position.longitude,
+                        status: v.current_status,
+                        // AT sometimes includes the last stop they cleared here:
+                        lastStop: v.stop_id || "Unknown (In Transit)"
+                    });
                 }
             });
 
-            errorBox.style.display = 'none';
+            stats.innerText = `Active 24-Series Buses found: ${found.length}`;
+            
             if (found.length === 0) {
-                list.innerHTML = '<div style="padding:30px; text-align:center; color:#999;">No buses found for this stop yet.</div>';
+                output.innerHTML = "NO BUSES FOUND ON ROUTE. The route might be down or using different IDs.";
             } else {
-                list.innerHTML = found.sort((a,b) => a.ts - b.ts).map(b => {
-                    const m = Math.floor((b.ts - now) / 60);
-                    return `<div class="bus-row">
-                        <span><strong>${b.route}</strong> (Live)</span>
-                        <span style="color:#00875a; font-weight:bold;">${m <= 0 ? 'DUE' : m + 'm'}</span>
-                    </div>`;
-                }).join('');
+                output.innerHTML = found.map(b => `
+                    <div class="bus-card">
+                        <div><span class="highlight">BUS: ${b.route}</span> (ID: ${b.id})</div>
+                        <div>Status: <span class="${b.status === 'IN_TRANSIT' ? 'moving' : 'stopped'}">${b.status}</span></div>
+                        <div>Last Stop Cleared: <strong>${b.lastStop}</strong></div>
+                        <div>GPS: ${b.lat.toFixed(4)}, ${b.lon.toFixed(4)}</div>
+                        <a href="https://www.google.com/maps?q=${b.lat},${b.lon}" target="_blank" style="color:#aaa;">[View on Map]</a>
+                    </div>
+                `).join('');
             }
+
         } catch (e) {
-            errorBox.style.display = 'block';
-            errorBox.innerText = `Connection Failed: ${e.message}. If this is a CORS error, try opening this file in a "local server" or a different browser.`;
+            stats.innerText = "Connection Error: " + e.message;
         }
     }
 
-    setInterval(fetchData, 20000);
-    fetchData();
+    // Run once immediately
+    debugRoute();
+    // Refresh every 30 seconds
+    setInterval(debugRoute, 30000);
 </script>
 </body>
 </html>
