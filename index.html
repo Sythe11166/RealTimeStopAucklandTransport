@@ -2,88 +2,93 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>24-Series GPS Debugger</title>
+    <title>8274 Precision GPS</title>
     <style>
-        body { font-family: monospace; background: #000; color: #0f0; padding: 20px; }
-        .bus-row { border-bottom: 1px solid #333; padding: 10px; margin-bottom: 5px; background: #111; }
-        .btn { background: #00457c; color: white; border: none; padding: 10px; cursor: pointer; border-radius: 4px; }
-        .status-tag { font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 0.8rem; }
-        .in-transit { background: #00457c; color: white; }
-        .stopped { background: #c00; color: white; }
+        body { font-family: 'Segoe UI', sans-serif; background: #000; color: #0f0; padding: 20px; }
+        .card { max-width: 450px; margin: auto; background: #111; border: 1px solid #333; border-radius: 12px; overflow: hidden; }
+        .header { background: #00457c; color: white; padding: 15px; text-align: center; }
+        .bus-row { padding: 15px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; }
+        .route-label { background: #fff; color: #000; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        .dist { color: #39FF14; font-family: monospace; font-size: 1.2rem; }
+        #status-bar { font-size: 0.7rem; color: #666; padding: 10px; text-align: center; border-top: 1px solid #222; }
     </style>
 </head>
 <body>
 
-<div style="position: sticky; top:0; background:#000; padding:10px; border-bottom:2px solid #0f0;">
-    <h2>24B / 24R FLEET SCAN</h2>
-    <button class="btn" onclick="runDebug()">FORCE REFRESH</button>
-    <span id="counter" style="margin-left: 15px;">Initializing...</span>
+<div class="card">
+    <div class="header"><h2 style="margin:0">8274 GPS RADAR</h2></div>
+    <div id="display">Scanning...</div>
+    <div id="status-bar">Syncing fleet data...</div>
 </div>
-
-<div id="log" style="margin-top: 20px;"></div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
+    const STOP_LAT = -36.8923; // Lat for 8274
+    const STOP_LON = 174.7441; // Lon for 8274
 
-    async function runDebug() {
-        const log = document.getElementById('log');
-        const counter = document.getElementById('counter');
-        log.innerHTML = "Scanning entire fleet GPS...";
+    async function scan() {
+        const display = document.getElementById('display');
+        const statusBar = document.getElementById('status-bar');
         
         try {
-            // We use vehiclepositions to find the PHYSICAL bus location
             const url = `https://api.at.govt.nz/realtime/legacy/vehiclepositions?subscription-key=${API_KEY}`;
             const res = await fetch(url);
             const data = await res.json();
             
-            // Safety check for the data structure
-            let entities = [];
-            if (data.entity) entities = data.entity;
-            else if (data.response && data.response.entity) entities = data.response.entity;
+            // Flexible check for 'entity' location in the data
+            const entities = data.entity || (data.response && data.response.entity) || [];
+            let found = [];
 
-            let matches = [];
             entities.forEach(ent => {
                 const v = ent.vehicle;
                 if (!v || !v.trip) return;
 
                 const rId = v.trip.route_id;
-                // Look for anything 24-related
-                if (rId.includes('24B') || rId.includes('24R') || rId.startsWith('24')) {
-                    matches.push({
-                        route: rId.split('-')[0],
-                        id: v.vehicle.id,
-                        lat: v.position.latitude,
-                        lon: v.position.longitude,
-                        status: v.current_status || "MOVING",
-                        currentStop: v.stop_id || "Between Stops"
-                    });
+                // Specifically looking for the IDs you found
+                if (rId.includes('24R-202') || rId.includes('24B-202')) {
+                    const dist = getKm(v.position.latitude, v.position.longitude, STOP_LAT, STOP_LON);
+                    
+                    // Only show if it's within 10km (on its way)
+                    if (dist < 10) {
+                        found.push({
+                            route: rId.split('-')[0],
+                            dist: dist,
+                            status: v.current_status || "MOVING"
+                        });
+                    }
                 }
             });
 
-            counter.innerText = `Found ${matches.length} active 24-series buses.`;
-
-            if (matches.length === 0) {
-                log.innerHTML = "NO BUSES FOUND. They may have different Route IDs today.";
+            if (found.length === 0) {
+                display.innerHTML = '<div style="padding:40px; text-align:center;">No 24-series buses detected on radar.</div>';
             } else {
-                log.innerHTML = matches.map(m => `
+                display.innerHTML = found.sort((a,b) => a.dist - b.dist).map(b => `
                     <div class="bus-row">
-                        <strong style="color:#fff;">[${m.route}]</strong> Bus #${m.id} <br>
-                        Status: <span class="status-tag ${m.status === 'STOPPED_AT' ? 'stopped' : 'in-transit'}">${m.status}</span><br>
-                        Current/Last Stop: <span style="color:#39FF14;">${m.currentStop}</span><br>
-                        Location: ${m.lat.toFixed(5)}, ${m.lon.toFixed(5)} 
-                        <a href="https://www.google.com/maps?q=${m.lat},${m.lon}" target="_blank" style="color:#aaa; font-size:0.8rem;">[Map]</a>
+                        <div>
+                            <span class="route-label">${b.route}</span><br>
+                            <small style="color:#888;">${b.status.replace(/_/g, ' ')}</small>
+                        </div>
+                        <div class="dist">${(b.dist * 1000).toFixed(0)}m</div>
                     </div>
                 `).join('');
             }
+            statusBar.innerText = `Last update: ${new Date().toLocaleTimeString()} | Vehicles: ${entities.length}`;
 
         } catch (e) {
-            log.innerHTML = `<span style="color:red">ERROR: ${e.message}</span>`;
-            console.error(e);
+            display.innerHTML = `<div style="padding:20px; color:red;">Connection Error: ${e.message}</div>`;
         }
     }
 
-    runDebug();
-    setInterval(runDebug, 30000); // Auto-refresh every 30s
+    function getKm(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2-lat1) * Math.PI/180;
+        const dLon = (lon2-lon1) * Math.PI/180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    setInterval(scan, 10000);
+    scan();
 </script>
 </body>
 </html>
