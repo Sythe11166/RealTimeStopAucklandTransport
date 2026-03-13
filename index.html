@@ -3,101 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>8274 Terminal</title>
+    <title>8274 Emergency Radar</title>
     <style>
-        body { font-family: 'Courier New', monospace; background: #0a0a0a; color: #39FF14; padding: 20px; display: flex; justify-content: center; }
-        .terminal { width: 100%; max-width: 500px; border: 2px solid #333; padding: 20px; border-radius: 5px; box-shadow: 0 0 20px rgba(57, 255, 20, 0.1); }
-        .header { border-bottom: 1px solid #333; margin-bottom: 15px; padding-bottom: 10px; }
-        .bus-line { padding: 10px 0; border-bottom: 1px dashed #222; display: flex; justify-content: space-between; }
-        .warning { color: #ff4444; font-weight: bold; animation: blink 1s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
-        .btn { background: #39FF14; color: #000; border: none; padding: 10px; cursor: pointer; font-family: inherit; font-weight: bold; margin-top: 10px; width: 100%; }
+        body { font-family: 'Segoe UI', sans-serif; background: #000; color: #eee; display: flex; justify-content: center; padding: 20px; }
+        .card { width: 100%; max-width: 400px; background: #1a1a1a; border-radius: 12px; border: 1px solid #333; overflow: hidden; }
+        .header { background: #00457c; padding: 15px; text-align: center; }
+        .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #333; }
+        .route { background: #fff; color: #000; padding: 5px 10px; border-radius: 4px; font-weight: bold; margin-right: 15px; }
+        .time { margin-left: auto; color: #39FF14; font-weight: bold; font-size: 1.2rem; }
+        .alert { background: #441111; color: #ff9999; padding: 10px; font-size: 0.8rem; text-align: center; border-bottom: 1px solid #662222; }
     </style>
 </head>
 <body>
 
-<div class="terminal">
+<div class="card">
     <div class="header">
-        <div>> SYSTEM: AT_GTFS_RADAR</div>
-        <div>> TARGET: STOP_8274-e1c68f23</div>
+        <h3 style="margin:0">STOP 8274</h3>
+        <small id="sync">System Syncing...</small>
     </div>
-
-    <div id="output">Pinging Auckland Satellite...</div>
-    
-    <div id="controls" style="margin-top:20px;">
-        <button class="btn" onclick="deepFetch()">RE-SCAN SATELLITE</button>
-    </div>
+    <div class="alert">FRIDAY PEAK: Real-time data may be intermittent due to route detours.</div>
+    <div id="bus-list"><div style="padding:40px; text-align:center;">Scanning alternate feed...</div></div>
 </div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const STOP_LAT = -36.8923;
-    const STOP_LON = 174.7441;
+    const STOP_ID = '8274-e1c68f23';
 
-    async function deepFetch() {
-        const out = document.getElementById('output');
-        out.innerHTML = "Scanning all VehiclePositions...";
-
+    async function fetchEmergency() {
+        const list = document.getElementById('bus-list');
+        const sync = document.getElementById('sync');
+        
         try {
-            const url = `https://api.at.govt.nz/realtime/legacy/vehiclepositions?subscription-key=${API_KEY}`;
+            // Switching to the primary real-time endpoint (non-legacy)
+            const url = `https://api.at.govt.nz/realtime/tripupdates?subscription-key=${API_KEY}`;
             const res = await fetch(url);
             const data = await res.json();
             
-            // AT's data can be in .entity or .response.entity
-            const fleet = data.entity || (data.response && data.response.entity) || [];
+            // Standard GTFS-RT structure check
+            const entities = data.entity || [];
+            const now = Math.floor(Date.now() / 1000);
+            let found = [];
 
-            if (fleet.length === 0) {
-                out.innerHTML = `
-                    <div class="warning">! ERROR: AT FEED RETURNED 0 VEHICLES</div>
-                    <div style="margin-top:10px; font-size:0.8rem;">
-                        This usually means AT's real-time server is rebooting. 
-                        Check the road—if you see any bus, the GPS is just down.
-                    </div>
-                `;
-                return;
-            }
+            entities.forEach(ent => {
+                const tu = ent.trip_update;
+                if (!tu) return;
 
-            let matches = [];
-            fleet.forEach(ent => {
-                const v = ent.vehicle;
-                if (!v || !v.trip) return;
-                
-                const rid = v.trip.route_id || "";
-                // Searching specifically for 24-series
-                if (rid.includes('24B') || rid.includes('24R') || rid.startsWith('24')) {
-                    const d = calculateDist(v.position.latitude, v.position.longitude, STOP_LAT, STOP_LON);
-                    if (d < 8) { // Only show buses within 8km
-                        matches.push({ route: rid.split('-')[0], dist: d });
+                const rid = tu.trip.route_id;
+                // Capture any 24 variant
+                if (rid.includes('24B') || rid.includes('24R')) {
+                    const match = (tu.stop_time_update || []).find(s => String(s.stop_id) === STOP_ID);
+                    if (match) {
+                        const t = (match.arrival || match.departure).time;
+                        if (t > now - 60) {
+                            found.push({ route: rid.split('-')[0], ts: t });
+                        }
                     }
                 }
             });
 
-            if (matches.length === 0) {
-                out.innerHTML = "> FEED ACTIVE. 0 BUSES ON ROUTE 24 DETECTED.";
+            if (found.length === 0) {
+                list.innerHTML = '<div style="padding:40px; text-align:center; color:#888;">No buses predicted. If you see a 24 bus, its GPS is currently hidden from the API.</div>';
             } else {
-                out.innerHTML = matches.sort((a,b) => a.dist - b.dist).map(m => `
-                    <div class="bus-line">
-                        <span>[${m.route}]</span>
-                        <span>${(m.dist * 1000).toFixed(0)}m AWAY</span>
-                    </div>
-                `).join('');
+                list.innerHTML = found.sort((a,b) => a.ts - b.ts).map(b => {
+                    const m = Math.floor((b.ts - now) / 60);
+                    return `<div class="bus-row"><span class="route">${b.route}</span><span>Sandringham Rd</span><span class="time">${m <= 0 ? 'DUE' : m + 'm'}</span></div>`;
+                }).join('');
             }
+            sync.innerText = "Updated: " + new Date().toLocaleTimeString();
 
         } catch (e) {
-            out.innerHTML = `<span class="warning">! CONNECTION REFUSED</span><br>${e.message}`;
+            sync.innerText = "Feed Offline";
+            console.error(e);
         }
     }
 
-    function calculateDist(lat1, lon1, lat2, lon2) {
-        const R = 6371;
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
-
-    deepFetch();
-    setInterval(deepFetch, 30000);
+    setInterval(fetchEmergency, 20000);
+    fetchEmergency();
 </script>
 </body>
 </html>
