@@ -2,83 +2,88 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>24B/24R Route Debugger</title>
+    <title>24-Series GPS Debugger</title>
     <style>
-        body { font-family: monospace; background: #000; color: #0f0; padding: 20px; line-height: 1.4; }
-        .bus-card { border: 1px solid #333; padding: 10px; margin-bottom: 10px; background: #111; }
-        .highlight { color: #fff; background: #00457c; padding: 2px 5px; }
-        .moving { color: #39FF14; }
-        .stopped { color: #ff4444; }
-        #header { position: sticky; top: 0; background: #000; padding-bottom: 10px; border-bottom: 1px solid #0f0; margin-bottom: 20px; }
+        body { font-family: monospace; background: #000; color: #0f0; padding: 20px; }
+        .bus-row { border-bottom: 1px solid #333; padding: 10px; margin-bottom: 5px; background: #111; }
+        .btn { background: #00457c; color: white; border: none; padding: 10px; cursor: pointer; border-radius: 4px; }
+        .status-tag { font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 0.8rem; }
+        .in-transit { background: #00457c; color: white; }
+        .stopped { background: #c00; color: white; }
     </style>
 </head>
 <body>
 
-<div id="header">
-    <h2>DEBUGGING ROUTE 24B/24R</h2>
-    <div id="stats">Pinging fleet...</div>
+<div style="position: sticky; top:0; background:#000; padding:10px; border-bottom:2px solid #0f0;">
+    <h2>24B / 24R FLEET SCAN</h2>
+    <button class="btn" onclick="runDebug()">FORCE REFRESH</button>
+    <span id="counter" style="margin-left: 15px;">Initializing...</span>
 </div>
 
-<div id="output"></div>
+<div id="log" style="margin-top: 20px;"></div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
 
-    async function debugRoute() {
-        const output = document.getElementById('output');
-        const stats = document.getElementById('stats');
+    async function runDebug() {
+        const log = document.getElementById('log');
+        const counter = document.getElementById('counter');
+        log.innerHTML = "Scanning entire fleet GPS...";
         
         try {
-            // We use VehiclePositions because it shows EVERY active bus regardless of their itinerary
+            // We use vehiclepositions to find the PHYSICAL bus location
             const url = `https://api.at.govt.nz/realtime/legacy/vehiclepositions?subscription-key=${API_KEY}`;
             const res = await fetch(url);
             const data = await res.json();
             
-            const vehicles = data.response.entity;
-            let found = [];
+            // Safety check for the data structure
+            let entities = [];
+            if (data.entity) entities = data.entity;
+            else if (data.response && data.response.entity) entities = data.response.entity;
 
-            vehicles.forEach(ent => {
+            let matches = [];
+            entities.forEach(ent => {
                 const v = ent.vehicle;
-                const rid = v.trip.route_id;
+                if (!v || !v.trip) return;
 
-                if (rid.includes('24B') || rid.includes('24R')) {
-                    found.push({
+                const rId = v.trip.route_id;
+                // Look for anything 24-related
+                if (rId.includes('24B') || rId.includes('24R') || rId.startsWith('24')) {
+                    matches.push({
+                        route: rId.split('-')[0],
                         id: v.vehicle.id,
-                        route: rid,
                         lat: v.position.latitude,
                         lon: v.position.longitude,
-                        status: v.current_status,
-                        // AT sometimes includes the last stop they cleared here:
-                        lastStop: v.stop_id || "Unknown (In Transit)"
+                        status: v.current_status || "MOVING",
+                        currentStop: v.stop_id || "Between Stops"
                     });
                 }
             });
 
-            stats.innerText = `Active 24-Series Buses found: ${found.length}`;
-            
-            if (found.length === 0) {
-                output.innerHTML = "NO BUSES FOUND ON ROUTE. The route might be down or using different IDs.";
+            counter.innerText = `Found ${matches.length} active 24-series buses.`;
+
+            if (matches.length === 0) {
+                log.innerHTML = "NO BUSES FOUND. They may have different Route IDs today.";
             } else {
-                output.innerHTML = found.map(b => `
-                    <div class="bus-card">
-                        <div><span class="highlight">BUS: ${b.route}</span> (ID: ${b.id})</div>
-                        <div>Status: <span class="${b.status === 'IN_TRANSIT' ? 'moving' : 'stopped'}">${b.status}</span></div>
-                        <div>Last Stop Cleared: <strong>${b.lastStop}</strong></div>
-                        <div>GPS: ${b.lat.toFixed(4)}, ${b.lon.toFixed(4)}</div>
-                        <a href="https://www.google.com/maps?q=${b.lat},${b.lon}" target="_blank" style="color:#aaa;">[View on Map]</a>
+                log.innerHTML = matches.map(m => `
+                    <div class="bus-row">
+                        <strong style="color:#fff;">[${m.route}]</strong> Bus #${m.id} <br>
+                        Status: <span class="status-tag ${m.status === 'STOPPED_AT' ? 'stopped' : 'in-transit'}">${m.status}</span><br>
+                        Current/Last Stop: <span style="color:#39FF14;">${m.currentStop}</span><br>
+                        Location: ${m.lat.toFixed(5)}, ${m.lon.toFixed(5)} 
+                        <a href="https://www.google.com/maps?q=${m.lat},${m.lon}" target="_blank" style="color:#aaa; font-size:0.8rem;">[Map]</a>
                     </div>
                 `).join('');
             }
 
         } catch (e) {
-            stats.innerText = "Connection Error: " + e.message;
+            log.innerHTML = `<span style="color:red">ERROR: ${e.message}</span>`;
+            console.error(e);
         }
     }
 
-    // Run once immediately
-    debugRoute();
-    // Refresh every 30 seconds
-    setInterval(debugRoute, 30000);
+    runDebug();
+    setInterval(runDebug, 30000); // Auto-refresh every 30s
 </script>
 </body>
 </html>
