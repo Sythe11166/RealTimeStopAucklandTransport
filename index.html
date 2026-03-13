@@ -2,80 +2,103 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>8274 API Debugger</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>8274 Precision Tracker</title>
     <style>
-        body { font-family: monospace; background: #000; color: #0f0; padding: 20px; }
-        .log-entry { border-bottom: 1px solid #222; padding: 5px; font-size: 12px; }
-        .highlight { color: #fff; background: #c00; font-weight: bold; }
-        #controls { background: #111; padding: 10px; border: 1px solid #333; margin-bottom: 20px; position: sticky; top: 0; }
+        :root { --at-blue: #00457c; --at-green: #00875a; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; display: flex; justify-content: center; padding: 20px; }
+        .card { width: 100%; max-width: 450px; background: white; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: var(--at-blue); color: white; padding: 20px; text-align: center; }
+        .bus-row { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #eee; position: relative; }
+        .departed { background: #fff5f5; border-left: 5px solid #d32f2f; opacity: 0.7; }
+        .route-badge { background: #333; color: white; width: 55px; height: 38px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .details { flex: 1; margin-left: 15px; }
+        .time { font-weight: 800; color: var(--at-green); font-size: 1.3rem; text-align: right; }
+        .footer { background: #111; color: #39FF14; padding: 8px; font-family: monospace; font-size: 0.65rem; text-align: center; }
     </style>
 </head>
 <body>
 
-<div id="controls">
-    <h3>DEBUG MODE: Auckland Fleet Scan</h3>
-    <div id="summary">Initializing...</div>
-    <p>Searching for any ID containing "24" or Stop "8274"</p>
+<div class="card">
+    <div class="header">
+        <h2 style="margin:0">STOP 8274</h2>
+        <small id="status">Precision ID: 8274-e1c68f23</small>
+    </div>
+    <div id="bus-list"><div style="padding:40px; text-align:center; color:#999;">Scanning 24B/24R Itineraries...</div></div>
+    <div class="footer" id="console">Initializing...</div>
 </div>
-
-<div id="log-output"></div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const TARGET_STOP = '8274';
+    const FULL_STOP_ID = '8274-e1c68f23';
+    let departedBuffer = new Set(); // To hold buses that just passed
 
-    async function runDiagnostic() {
-        const output = document.getElementById('log-output');
-        const summary = document.getElementById('summary');
+    async function update() {
+        const list = document.getElementById('bus-list');
+        const consoleLog = document.getElementById('console');
         
         try {
             const res = await fetch('https://api.at.govt.nz/realtime/legacy/tripupdates', {
                 headers: { 'Ocp-Apim-Subscription-Key': API_KEY }
             });
             const data = await res.json();
-            
-            if (!data.response || !data.response.entity) {
-                summary.innerText = "ERROR: No entities found in API response.";
-                return;
+            const now = Math.floor(Date.now() / 1000);
+            let active = [];
+
+            if (data.response && data.response.entity) {
+                data.response.entity.forEach(item => {
+                    const tu = item.trip_update;
+                    if (!tu) return;
+
+                    const rid = tu.trip.route_id;
+                    // Look specifically for 24B and 24R
+                    if (rid.includes('24B') || rid.includes('24R')) {
+                        const updates = [].concat(tu.stop_time_update || []);
+                        
+                        // Exact match for your stop ID
+                        const match = updates.find(s => String(s.stop_id) === FULL_STOP_ID);
+
+                        if (match) {
+                            const time = (match.arrival || match.departure).time;
+                            if (time > now - 60) {
+                                active.push({
+                                    id: tu.trip.trip_id,
+                                    route: rid.split('-')[0],
+                                    ts: time,
+                                    departed: false
+                                });
+                            }
+                        }
+                    }
+                });
             }
 
-            const entities = data.response.entity;
-            let logs = [];
-            let matchCount = 0;
-
-            entities.forEach(entity => {
-                const tu = entity.trip_update;
-                if (!tu) return;
-
-                const rId = tu.trip.route_id;
-                const updates = [].concat(tu.stop_time_update || []);
-                const hasOurStop = updates.some(s => String(s.stop_id).trim() === TARGET_STOP);
-                
-                // If it's a 24 series OR it mentions our stop, highlight it!
-                if (rId.includes('24') || hasOurStop) {
-                    matchCount++;
-                    logs.push(`
-                        <div class="log-entry highlight">
-                            MATCH FOUND! [Route: ${rId}] [Trip: ${tu.trip.trip_id}] 
-                            <br>Stops in itinerary: ${updates.map(u => u.stop_id).join(', ')}
+            consoleLog.innerText = `SCAN: ${data.response.entity.length} | ACTIVE: ${active.length}`;
+            
+            // Render logic
+            if (active.length === 0) {
+                list.innerHTML = `<div style="padding:40px; text-align:center; color:#999;">
+                    No buses currently predicting ${MY_STOP_BASE}.<br>
+                    <small>Try again in 2-3 mins.</small>
+                </div>`;
+            } else {
+                list.innerHTML = active.sort((a,b) => a.ts - b.ts).map(b => {
+                    const mins = Math.floor((b.ts - now) / 60);
+                    return `
+                        <div class="bus-row">
+                            <div class="route-badge">${b.route}</div>
+                            <div class="details"><strong>Incoming</strong><br><small>Verified: ${FULL_STOP_ID}</small></div>
+                            <div class="time">${mins <= 0 ? 'DUE' : mins + 'm'}</div>
                         </div>
-                    `);
-                } else {
-                    // Just log the route ID of everything else so we can see the format
-                    logs.push(`<div class="log-entry">Scanning: Route ${rId}</div>`);
-                }
-            });
+                    `;
+                }).join('');
+            }
 
-            summary.innerText = `Scan Complete. Found ${entities.length} total buses. ${matchCount} match "24" or stop 8274.`;
-            output.innerHTML = logs.join('');
-
-        } catch (e) {
-            summary.innerText = "CRITICAL ERROR: Check API Key or Console.";
-            console.error(e);
-        }
+        } catch (e) { consoleLog.innerText = "API CONNECTION ERROR"; }
     }
 
-    runDiagnostic();
+    setInterval(update, 15000);
+    update();
 </script>
 </body>
 </html>
