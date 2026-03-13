@@ -2,77 +2,89 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>8274 GPS Deep Scan</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>8274 Terminal</title>
     <style>
-        body { font-family: monospace; background: #000; color: #39FF14; padding: 20px; }
-        .log-entry { border-bottom: 1px solid #222; padding: 8px; margin-bottom: 5px; }
-        .found { background: #00457c; color: #fff; font-weight: bold; border-radius: 4px; padding: 4px; }
-        .error { color: #ff4444; }
-        #status-header { border-bottom: 2px solid #39FF14; padding-bottom: 10px; margin-bottom: 20px; position: sticky; top: 0; background: #000; }
+        body { font-family: 'Courier New', monospace; background: #0a0a0a; color: #39FF14; padding: 20px; display: flex; justify-content: center; }
+        .terminal { width: 100%; max-width: 500px; border: 2px solid #333; padding: 20px; border-radius: 5px; box-shadow: 0 0 20px rgba(57, 255, 20, 0.1); }
+        .header { border-bottom: 1px solid #333; margin-bottom: 15px; padding-bottom: 10px; }
+        .bus-line { padding: 10px 0; border-bottom: 1px dashed #222; display: flex; justify-content: space-between; }
+        .warning { color: #ff4444; font-weight: bold; animation: blink 1s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        .btn { background: #39FF14; color: #000; border: none; padding: 10px; cursor: pointer; font-family: inherit; font-weight: bold; margin-top: 10px; width: 100%; }
     </style>
 </head>
 <body>
 
-<div id="status-header">
-    <h2 style="margin:0">DEBUG RADAR: STOP 8274</h2>
-    <div id="stats">Checking AT Satellite Feed...</div>
-</div>
+<div class="terminal">
+    <div class="header">
+        <div>> SYSTEM: AT_GTFS_RADAR</div>
+        <div>> TARGET: STOP_8274-e1c68f23</div>
+    </div>
 
-<div id="log"></div>
+    <div id="output">Pinging Auckland Satellite...</div>
+    
+    <div id="controls" style="margin-top:20px;">
+        <button class="btn" onclick="deepFetch()">RE-SCAN SATELLITE</button>
+    </div>
+</div>
 
 <script>
     const API_KEY = '109baa24d25a4ad2a9f94f8a52166bd5';
-    const STOP_8274_LAT = -36.8923; 
-    const STOP_8274_LON = 174.7441;
+    const STOP_LAT = -36.8923;
+    const STOP_LON = 174.7441;
 
-    async function deepScan() {
-        const log = document.getElementById('log');
-        const stats = document.getElementById('stats');
-        
+    async function deepFetch() {
+        const out = document.getElementById('output');
+        out.innerHTML = "Scanning all VehiclePositions...";
+
         try {
-            // Fetching Vehicle Positions - this is the most reliable "truth"
             const url = `https://api.at.govt.nz/realtime/legacy/vehiclepositions?subscription-key=${API_KEY}`;
             const res = await fetch(url);
             const data = await res.json();
             
-            // AT API can wrap 'entity' in 'response' or at top level
-            const entities = data.entity || (data.response && data.response.entity) || [];
-            
-            if (entities.length === 0) {
-                stats.innerHTML = '<span class="error">FEED EMPTY: No vehicles reporting in Auckland right now.</span>';
+            // AT's data can be in .entity or .response.entity
+            const fleet = data.entity || (data.response && data.response.entity) || [];
+
+            if (fleet.length === 0) {
+                out.innerHTML = `
+                    <div class="warning">! ERROR: AT FEED RETURNED 0 VEHICLES</div>
+                    <div style="margin-top:10px; font-size:0.8rem;">
+                        This usually means AT's real-time server is rebooting. 
+                        Check the road—if you see any bus, the GPS is just down.
+                    </div>
+                `;
                 return;
             }
 
-            let html = "";
-            let matchCount = 0;
-
-            entities.forEach(ent => {
+            let matches = [];
+            fleet.forEach(ent => {
                 const v = ent.vehicle;
                 if (!v || !v.trip) return;
-
-                const rId = v.trip.route_id || "Unknown";
                 
-                // Broad search for ANY 24-related route
-                if (rId.includes('24')) {
-                    matchCount++;
-                    const dist = calculateDist(v.position.latitude, v.position.longitude, STOP_8274_LAT, STOP_8274_LON);
-                    
-                    html += `
-                        <div class="log-entry">
-                            <span class="found">MATCH: ${rId}</span> | Bus #${v.vehicle.id}<br>
-                            GPS: ${v.position.latitude.toFixed(4)}, ${v.position.longitude.toFixed(4)}<br>
-                            Distance to Stop: <strong>${(dist * 1000).toFixed(0)}m</strong><br>
-                            Status: ${v.current_status || "IN_TRANSIT"} | At Stop: ${v.stop_id || "Moving"}
-                        </div>
-                    `;
+                const rid = v.trip.route_id || "";
+                // Searching specifically for 24-series
+                if (rid.includes('24B') || rid.includes('24R') || rid.startsWith('24')) {
+                    const d = calculateDist(v.position.latitude, v.position.longitude, STOP_LAT, STOP_LON);
+                    if (d < 8) { // Only show buses within 8km
+                        matches.push({ route: rid.split('-')[0], dist: d });
+                    }
                 }
             });
 
-            stats.innerText = `Scanned ${entities.length} vehicles. Found ${matchCount} on Route 24.`;
-            log.innerHTML = matchCount > 0 ? html : "Scanning... No 24B or 24R buses detected in the current feed slice.";
+            if (matches.length === 0) {
+                out.innerHTML = "> FEED ACTIVE. 0 BUSES ON ROUTE 24 DETECTED.";
+            } else {
+                out.innerHTML = matches.sort((a,b) => a.dist - b.dist).map(m => `
+                    <div class="bus-line">
+                        <span>[${m.route}]</span>
+                        <span>${(m.dist * 1000).toFixed(0)}m AWAY</span>
+                    </div>
+                `).join('');
+            }
 
         } catch (e) {
-            stats.innerHTML = `<span class="error">CRITICAL ERROR: ${e.message}</span>`;
+            out.innerHTML = `<span class="warning">! CONNECTION REFUSED</span><br>${e.message}`;
         }
     }
 
@@ -84,8 +96,8 @@
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    deepScan();
-    setInterval(deepScan, 15000);
+    deepFetch();
+    setInterval(deepFetch, 30000);
 </script>
 </body>
 </html>
